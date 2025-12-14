@@ -1,0 +1,131 @@
+# BodaInsure Development Environment
+# Usage: docker-compose -f docker/dev/docker-compose.yml up -d
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: bodainsure-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bodainsure
+      POSTGRES_PASSWORD: bodainsure
+      POSTGRES_DB: bodainsure
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bodainsure -d bodainsure"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for sessions and queues
+  redis:
+    image: redis:7-alpine
+    container_name: bodainsure-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Commander (Web UI for Redis) - Dev only
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: bodainsure-redis-ui-dev
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+
+  # pgAdmin (Web UI for PostgreSQL) - Dev only
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: bodainsure-pgadmin-dev
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@bodainsure.co.ke
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+
+  # MailHog for email testing - Dev only
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: bodainsure-mailhog-dev
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+
+  # MinIO for S3-compatible object storage (KYC documents)
+  minio:
+    image: minio/minio:latest
+    container_name: bodainsure-minio-dev
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: bodainsure
+      MINIO_ROOT_PASSWORD: bodainsure123
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # Console UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MinIO bucket initialization
+  minio-init:
+    image: minio/mc:latest
+    container_name: bodainsure-minio-init-dev
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set bodainsure http://minio:9000 bodainsure bodainsure123;
+      mc mb --ignore-existing bodainsure/kyc-documents;
+      mc mb --ignore-existing bodainsure/policy-documents;
+      mc mb --ignore-existing bodainsure/claim-documents;
+      mc anonymous set none bodainsure/kyc-documents;
+      mc anonymous set none bodainsure/policy-documents;
+      mc anonymous set none bodainsure/claim-documents;
+      echo 'MinIO buckets initialized';
+      exit 0;
+      "
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  default:
+    name: bodainsure-dev-network

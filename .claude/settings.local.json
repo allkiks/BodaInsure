@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(npx @nestjs/cli new:*)",
+      "Bash(npx nest:*)",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\identity\\decorators\" mkdir \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\identity\\decorators\")",
+      "Bash(dir:*)",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\notification\\providers\" mkdir \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\notification\\providers\")",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\notification\\interfaces\" mkdir \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\notification\\interfaces\")",
+      "Bash(findstr:*)",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\storage\" mkdir \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\storage\")",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\storage\\interfaces\" mkdir \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\storage\\interfaces\")",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\storage\\providers\" mkdir \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\storage\\providers\")",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\storage\\services\" mkdir \"D:\\repos\\BODAINSURE\\src\\server\\src\\modules\\storage\\services\")",
+      "mcp__ide__getDiagnostics",
+      "Bash(cat:*)",
+      "WebFetch(domain:preview.codecanyon.net)",
+      "WebSearch"
+    ]
+  }
+}
