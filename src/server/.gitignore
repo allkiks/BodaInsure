@@ -1,40 +1,221 @@
-# Dependencies
+# =============================================================================
+# BodaInsure Server - Git Ignore
+# NestJS / Node.js / TypeScript
+# =============================================================================
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
 node_modules/
+.pnp
+.pnp.js
+.yarn/
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
 
-# Build output
+# =============================================================================
+# BUILD OUTPUT
+# =============================================================================
 dist/
+build/
+out/
 *.tsbuildinfo
+*.js.map
+*.d.ts.map
 
-# Test coverage
-coverage/
-
-# Environment files
+# =============================================================================
+# ENVIRONMENT & SECRETS
+# =============================================================================
 .env
 .env.*
 !.env.example
+!.env.test.example
 
-# IDE files
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# =============================================================================
+# TESTING
+# =============================================================================
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+*.lcov
+
+# Jest
+jest-*.json
+
+# =============================================================================
+# IDE & EDITORS
+# =============================================================================
+# VS Code
 .vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains (WebStorm, IntelliJ)
 .idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Vim/Neovim
 *.swp
 *.swo
+*~
+.netrwhist
+Session.vim
+.vim/
 
-# OS files
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+.dir-locals.el
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# =============================================================================
+# OS FILES
+# =============================================================================
+# macOS
 .DS_Store
-Thumbs.db
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
 
-# Logs
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# LOGS
+# =============================================================================
 logs/
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Document storage (local file storage)
+# =============================================================================
+# RUNTIME & CACHE
+# =============================================================================
+.cache/
+.parcel-cache/
+.npm/
+.eslintcache
+.stylelintcache
+*.pid
+*.pid.lock
+*.seed
+*.pid
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache
+.npm/
+
+# Optional eslint cache
+.eslintcache
+
+# =============================================================================
+# LOCAL STORAGE & UPLOADS
+# =============================================================================
+uploads/
 docstore/
-
-# Debug
-.nyc_output/
-
-# Temporary files
-tmp/
+storage/
 temp/
+tmp/
 *.tmp
+*.temp
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+# SQLite
+*.sqlite
+*.sqlite3
+*.db
+
+# Database dumps
+*.sql
+!src/database/migrations/*.sql
+!docker/dev/init-db.sql
+
+# =============================================================================
+# DOCUMENTATION (generated)
+# =============================================================================
+docs/api/
+typedoc/
+.docusaurus/
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Sentry
+.sentryclirc
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Turborepo
+.turbo
+
+# Vercel
+.vercel
+
+# Storybook
+storybook-static/
+
+# Playwright
+playwright-report/
+playwright/.cache/
+
+# Husky
+.husky/_/

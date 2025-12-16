@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   ISmsProvider,
@@ -197,8 +197,12 @@ export class SmsOrchestratorService implements OnModuleInit {
         // Merge results
         let retryIdx = 0;
         for (let i = 0; i < result.results.length; i++) {
-          if (!result.results[i].success && retryIdx < retryResult.results.length) {
-            result.results[i] = retryResult.results[retryIdx];
+          const currentResult = result.results[i];
+          if (currentResult && !currentResult.success && retryIdx < retryResult.results.length) {
+            const retryResponse = retryResult.results[retryIdx];
+            if (retryResponse) {
+              result.results[i] = retryResponse;
+            }
             retryIdx++;
           }
         }

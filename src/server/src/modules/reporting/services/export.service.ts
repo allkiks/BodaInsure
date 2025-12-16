@@ -221,4 +221,26 @@ export class ExportService {
         return 'dat';
     }
   }
+
+  /**
+   * Export data to buffer
+   * Convenience method for scheduled reports
+   */
+  async exportToBuffer(
+    data: { columns?: string[]; rows: Record<string, unknown>[] },
+    format: ReportFormat | string,
+    filename: string,
+  ): Promise<Buffer> {
+    const reportFormat = typeof format === 'string'
+      ? (ReportFormat[format.toUpperCase() as keyof typeof ReportFormat] ?? ReportFormat.JSON)
+      : format;
+
+    const result = await this.export(data.rows, {
+      filename,
+      format: reportFormat,
+      columns: data.columns,
+    });
+
+    return result.data;
+  }
 }

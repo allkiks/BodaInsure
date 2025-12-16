@@ -6,6 +6,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 // Lazy load pages for code splitting
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
+const AdminLoginPage = lazy(() => import('@/pages/auth/AdminLoginPage'));
 const OtpVerifyPage = lazy(() => import('@/pages/auth/OtpVerifyPage'));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
 const EnrollmentDashboard = lazy(() => import('@/pages/dashboards/EnrollmentDashboard'));
@@ -78,6 +79,14 @@ export function AppRouter() {
           element={
             <PublicRoute>
               <LoginPage />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/admin/login"
+          element={
+            <PublicRoute>
+              <AdminLoginPage />
             </PublicRoute>
           }
         />

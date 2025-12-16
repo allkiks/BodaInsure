@@ -1,9 +1,8 @@
-import { Injectable, Logger, BadRequestException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Membership, MembershipStatus, MemberRole } from '../entities/membership.entity.js';
 import { OrganizationService } from './organization.service.js';
-import { UserService } from '../../identity/services/user.service.js';
 import { User, UserStatus, Language } from '../../identity/entities/user.entity.js';
 import { normalizePhoneToE164 } from '../../../common/utils/phone.util.js';
 
@@ -78,12 +77,15 @@ export class BulkImportService {
     @InjectRepository(Membership)
     private readonly membershipRepository: Repository<Membership>,
     @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    private readonly userRepo: Repository<User>,
     private readonly organizationService: OrganizationService,
-    @Inject(forwardRef(() => UserService))
-    private readonly userService: UserService,
     private readonly dataSource: DataSource,
   ) {}
+
+  // Expose userRepository for subclasses
+  protected get userRepository(): Repository<User> {
+    return this.userRepo;
+  }
 
   /**
    * Import members from CSV content
@@ -176,7 +178,9 @@ export class BulkImportService {
     const rows: BulkImportRow[] = [];
 
     for (let i = startIndex; i < lines.length; i++) {
-      const values = this.parseCsvLine(lines[i]);
+      const line = lines[i];
+      if (!line) continue;
+      const values = this.parseCsvLine(line);
 
       if (values.length === 0 || !values[0]?.trim()) {
         continue; // Skip empty rows
@@ -247,6 +251,8 @@ export class BulkImportService {
       const row = rows[i];
       const rowNumber = startIndex + i + 1; // 1-indexed for user display
 
+      if (!row) continue;
+
       try {
         const result = await this.processRow(
           organizationId,
@@ -309,8 +315,6 @@ export class BulkImportService {
         where: { phone: normalizedPhone },
       });
 
-      let userCreated = false;
-
       if (!user) {
         // Create new user
         user = manager.create(User, {
@@ -328,7 +332,6 @@ export class BulkImportService {
         });
 
         user = await manager.save(User, user);
-        userCreated = true;
 
         this.logger.debug(`Created user: ${normalizedPhone.slice(-4)}`);
       }
@@ -434,7 +437,7 @@ export class BulkImportService {
       const row = rows[i];
       const rowNumber = i + (skipFirstRow ? 2 : 1);
 
-      if (!row.phone) {
+      if (!row || !row.phone) {
         errors.push({ row: rowNumber, error: 'Phone number is required' });
         continue;
       }

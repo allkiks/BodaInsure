@@ -37,6 +37,7 @@ export enum ReportFrequency {
   DAILY = 'DAILY',
   WEEKLY = 'WEEKLY',
   MONTHLY = 'MONTHLY',
+  QUARTERLY = 'QUARTERLY',
 }
 
 /**
@@ -104,7 +105,19 @@ export class ReportDefinition {
       type: string;
       options?: string[];
     }>;
+    recipients?: Array<{
+      email: string;
+      name?: string;
+    }>;
   };
+
+  /** Last scheduled run timestamp */
+  @Column({
+    name: 'last_scheduled_run',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  lastScheduledRun?: Date;
 
   /** Required roles to access this report */
   @Column({

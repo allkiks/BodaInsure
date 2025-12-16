@@ -1,9 +1,11 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
+import type { Job } from 'bullmq';
 import {
   QueueName,
   PolicyJobType,
+} from '../interfaces/job.interface.js';
+import type {
   PolicyQueueJobData,
   JobResult,
   PolicyCertificateJobData,
@@ -11,6 +13,7 @@ import {
   PolicyExpirationJobData,
 } from '../interfaces/job.interface.js';
 import { PolicyService } from '../../policy/services/policy.service.js';
+import { PolicyStatus } from '../../policy/entities/policy.entity.js';
 
 /**
  * Policy Queue Processor
@@ -65,7 +68,7 @@ export class PolicyProcessor extends WorkerHost {
           break;
 
         default:
-          throw new Error(`Unknown policy job type: ${job.data.type}`);
+          throw new Error(`Unknown policy job type: ${(job.data as PolicyQueueJobData).type}`);
       }
 
       const duration = Date.now() - startTime;
@@ -142,7 +145,7 @@ export class PolicyProcessor extends WorkerHost {
 
     for (const policyId of data.policyIds) {
       try {
-        await this.policyService.updatePolicyStatus(policyId, 'EXPIRED');
+        await this.policyService.updatePolicyStatus(policyId, PolicyStatus.EXPIRED);
         expired++;
       } catch (error) {
         errors++;
@@ -163,7 +166,7 @@ export class PolicyProcessor extends WorkerHost {
 
     for (const policyId of data.policyIds) {
       try {
-        await this.policyService.updatePolicyStatus(policyId, 'LAPSED');
+        await this.policyService.updatePolicyStatus(policyId, PolicyStatus.LAPSED);
         lapsed++;
       } catch (error) {
         errors++;

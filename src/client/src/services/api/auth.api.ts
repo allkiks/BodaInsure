@@ -1,5 +1,12 @@
 import { apiClient } from './client';
-import type { LoginRequest, LoginResponse, OtpVerifyRequest, OtpVerifyResponse } from '@/types';
+import type {
+  LoginRequest,
+  LoginResponse,
+  OtpVerifyRequest,
+  OtpVerifyResponse,
+  AdminLoginRequest,
+  AdminLoginResponse,
+} from '@/types';
 import { API_ENDPOINTS } from '@/config/constants';
 
 export const authApi = {
@@ -10,6 +17,15 @@ export const authApi = {
   login: async (data: LoginRequest): Promise<LoginResponse> => {
     const response = await apiClient.post<LoginResponse>(API_ENDPOINTS.AUTH_LOGIN, data);
     return response.data;
+  },
+
+  /**
+   * Admin login with username and password
+   * For admin accounts only (PLATFORM_ADMIN, INSURANCE_ADMIN, KBA_ADMIN, SACCO_ADMIN)
+   */
+  adminLogin: async (data: AdminLoginRequest): Promise<AdminLoginResponse> => {
+    const response = await apiClient.post<{ data: AdminLoginResponse }>(API_ENDPOINTS.AUTH_ADMIN_LOGIN, data);
+    return response.data.data;
   },
 
   /**

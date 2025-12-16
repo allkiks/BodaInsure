@@ -68,6 +68,7 @@ export enum Gender {
 @Entity('users')
 @Index(['phone'], { unique: true })
 @Index(['nationalId'], { unique: true, where: '"national_id" IS NOT NULL' })
+@Index(['username'], { unique: true, where: '"username" IS NOT NULL' })
 @Index(['status'])
 @Index(['role'])
 @Index(['kycStatus'])
@@ -287,4 +288,42 @@ export class User extends BaseEntity {
     default: false,
   })
   reminderOptOut!: boolean;
+
+  /**
+   * Username for admin accounts (optional)
+   * Only used for PLATFORM_ADMIN, INSURANCE_ADMIN, KBA_ADMIN, SACCO_ADMIN roles
+   * Regular riders authenticate via phone/OTP only
+   */
+  @Column({
+    name: 'username',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+    unique: true,
+  })
+  username?: string;
+
+  /**
+   * Password hash for admin accounts (optional)
+   * Stored as bcrypt hash
+   * Only used for admin roles that require username/password login
+   */
+  @Column({
+    name: 'password_hash',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  passwordHash?: string;
+
+  /**
+   * Indicates if this is a system-created account
+   * Used for default SUPERUSER and other system accounts
+   */
+  @Column({
+    name: 'is_system_account',
+    type: 'boolean',
+    default: false,
+  })
+  isSystemAccount!: boolean;
 }

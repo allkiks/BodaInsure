@@ -1,0 +1,275 @@
+# =============================================================================
+# BodaInsure Mobile - Git Ignore
+# Expo / React Native / TypeScript
+# =============================================================================
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# =============================================================================
+# EXPO
+# =============================================================================
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Expo EAS
+.easignore
+
+# =============================================================================
+# NATIVE BUILDS
+# =============================================================================
+# iOS
+ios/
+*.xcworkspace
+*.xcodeproj
+Pods/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.xcuserstate
+*.dSYM.zip
+*.dSYM
+
+# Android
+android/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+*.jks
+.gradle/
+local.properties
+*.iml
+.cxx/
+
+# =============================================================================
+# ENVIRONMENT & SECRETS
+# =============================================================================
+.env
+.env.*
+!.env.example
+!.env.development.example
+!.env.production.example
+
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.mobileprovision
+*.cer
+secrets/
+credentials/
+
+# Google Services
+google-services.json
+GoogleService-Info.plist
+
+# =============================================================================
+# TESTING
+# =============================================================================
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+*.lcov
+
+# Jest
+jest-*.json
+
+# Detox
+artifacts/
+
+# =============================================================================
+# IDE & EDITORS
+# =============================================================================
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains (Android Studio, IntelliJ, WebStorm)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Xcode
+xcuserdata/
+
+# Vim/Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+Session.vim
+.vim/
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+.dir-locals.el
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# =============================================================================
+# OS FILES
+# =============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+*.dmg
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# LOGS
+# =============================================================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+metro-*.log
+adb.log
+
+# =============================================================================
+# RUNTIME & CACHE
+# =============================================================================
+.cache/
+.npm/
+.eslintcache
+.stylelintcache
+
+# Metro bundler
+.metro-health-check*
+
+# TypeScript
+*.tsbuildinfo
+
+# Watchman
+.watchmanconfig
+
+# Buck
+buck-out/
+\.buckd/
+
+# =============================================================================
+# TEMPORARY FILES
+# =============================================================================
+temp/
+tmp/
+*.tmp
+*.temp
+
+# =============================================================================
+# BUNDLE OUTPUT
+# =============================================================================
+*.bundle
+*.jsbundle
+*.map
+sourcemaps/
+
+# =============================================================================
+# FASTLANE
+# =============================================================================
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+fastlane/readme.md
+
+# =============================================================================
+# COCOAPODS
+# =============================================================================
+Pods/
+Podfile.lock
+
+# =============================================================================
+# RUBY (for iOS builds)
+# =============================================================================
+vendor/bundle/
+.bundle/
+Gemfile.lock
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Sentry
+.sentryclirc
+
+# Turborepo
+.turbo
+
+# Storybook
+storybook-static/
+.storybook-out/
+.ondevice/
+
+# Husky
+.husky/_/
+
+# EAS Build
+eas.json
+!eas.json
+
+# App distribution
+*.ipa
+*.apk
+*.aab
+
+# Crashlytics
+crashlytics-build.properties
+fabric.properties

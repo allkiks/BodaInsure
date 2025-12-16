@@ -28,6 +28,10 @@ export const ROLES = {
   KBA_ADMIN: 'kba_admin',
   INSURANCE_ADMIN: 'insurance_admin',
   PLATFORM_ADMIN: 'platform_admin',
+  ADMIN: 'admin',
+  DPO: 'dpo',
+  SECURITY: 'security',
+  COMPLIANCE: 'compliance',
 } as const;
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];

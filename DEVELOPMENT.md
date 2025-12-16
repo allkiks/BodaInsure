@@ -27,26 +27,73 @@ This guide covers local development setup for all BodaInsure platform components
 
 ## 1. Quick Start
 
-### One-Command Setup (Docker)
+### One-Command Setup (Docker) - Recommended
+
+The recommended approach is 100% Docker-based development. All services run in containers with hot-reload enabled.
 
 ```bash
 # Clone repository
 git clone https://github.com/your-org/bodainsure.git
 cd bodainsure
 
-# Start all services with Docker
-cd docker/dev
-docker compose up -d
+# Start everything with a single command
+make dev-docker
 
-# Services will be available at:
-# - API: http://localhost:3000
-# - API Docs: http://localhost:3000/docs
-# - PostgreSQL: localhost:5432
-# - Redis: localhost:6379
-# - MailHog: http://localhost:8025
+# Windows users (without GNU Make)
+dev-docker.cmd start
 ```
 
-### Manual Setup
+This command will:
+1. Build Docker images for frontend and backend
+2. Start all infrastructure services (PostgreSQL, Redis, MinIO, MailHog)
+3. Run database migrations automatically
+4. Start the backend API with hot-reload
+5. Start the frontend with hot-reload
+
+**Services Available After Startup:**
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Frontend (Admin) | http://localhost:5173 | - |
+| Backend API | http://localhost:3000/api/v1 | - |
+| Swagger Docs | http://localhost:3000/docs | - |
+| PostgreSQL | localhost:5432 | bodainsure/bodainsure |
+| Redis | localhost:6379 | - |
+| MinIO Console | http://localhost:9001 | bodainsure/bodainsure123 |
+| MailHog (Email) | http://localhost:8025 | - |
+
+**Useful Docker Commands:**
+
+```bash
+# View logs
+make dev-docker-logs          # All services
+make dev-docker-logs-server   # Backend only
+make dev-docker-logs-client   # Frontend only
+
+# Restart services
+make dev-docker-restart
+
+# Stop services
+make dev-docker-down
+
+# Run migrations manually
+make dev-migrate
+
+# Open shell in container
+make dev-shell-server         # Backend container
+make dev-shell-client         # Frontend container
+make dev-shell-postgres       # PostgreSQL shell
+
+# Start optional dev tools (pgAdmin, Redis Commander)
+make dev-docker-tools
+
+# Clean everything (WARNING: deletes data)
+make dev-docker-clean
+```
+
+### Manual Setup (Without Docker)
+
+For development without Docker, you'll need to install and run services locally:
 
 ```bash
 # Backend
@@ -157,11 +204,16 @@ bodainsure/
 │   ├── dev/                    # Development Docker config
 │   └── prod/                   # Production Docker config
 │
-├── docs/                       # Documentation
+├── ref_docs/                   # Reference documentation
+│   ├── guides/                 # User and configuration guides
+│   ├── product_description.md
+│   ├── module_architecture.md
+│   ├── requirements_specification.md
+│   └── feature_specification.md
 ├── CLAUDE.md                   # AI governance rules
 ├── DEPLOYMENT.md               # Deployment guide
 ├── DEVELOPMENT.md              # This file
-└── tracker.md                  # Implementation tracker
+└── README.md                   # Project overview
 ```
 
 ---
@@ -524,12 +576,21 @@ eas build --platform android --profile development
 
 ### 7.1 Using Docker (Recommended)
 
-```bash
-cd docker/dev
-docker compose up -d postgres redis
+When using `make dev-docker`, the database is automatically set up and migrations are run. No additional setup is needed.
 
-# PostgreSQL: localhost:5432
+For infrastructure-only setup:
+
+```bash
+# Start only infrastructure services
+docker compose -f docker/dev/docker-compose.yml up -d postgres redis minio mailhog
+
+# PostgreSQL: localhost:5432 (bodainsure/bodainsure)
 # Redis: localhost:6379
+# MinIO: localhost:9000/9001
+# MailHog: localhost:8025
+
+# Run migrations manually
+make dev-migrate
 ```
 
 ### 7.2 Manual PostgreSQL Setup
@@ -892,7 +953,31 @@ REDIS_HOST=
 
 ## Quick Reference
 
-### Backend Commands
+### Docker Commands (Recommended)
+
+| Command | Description |
+|---------|-------------|
+| `make dev-docker` | Start full Docker environment |
+| `make dev-docker-down` | Stop all services |
+| `make dev-docker-logs` | View all logs (follow mode) |
+| `make dev-docker-restart` | Restart all services |
+| `make dev-docker-clean` | Remove all containers and volumes |
+| `make dev-docker-tools` | Start pgAdmin & Redis Commander |
+| `make dev-migrate` | Run database migrations |
+| `make dev-shell-server` | Open server container shell |
+| `make dev-shell-client` | Open client container shell |
+| `make dev-shell-postgres` | Open PostgreSQL shell |
+| `make dev-status` | Show container status |
+| `make dev-test` | Run server tests |
+| `make dev-lint` | Run linting |
+
+**Windows users**: Use `dev-docker.cmd` instead of `make`:
+- `dev-docker.cmd start` - Start environment
+- `dev-docker.cmd stop` - Stop services
+- `dev-docker.cmd logs` - View logs
+- `dev-docker.cmd migrate` - Run migrations
+
+### Backend Commands (Manual Setup)
 
 | Command | Description |
 |---------|-------------|
@@ -904,7 +989,7 @@ REDIS_HOST=
 | `npm run migration:run` | Run migrations |
 | `npm run migration:generate` | Generate migration |
 
-### Web Portal Commands
+### Web Portal Commands (Manual Setup)
 
 | Command | Description |
 |---------|-------------|

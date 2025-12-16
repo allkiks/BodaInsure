@@ -17,7 +17,21 @@
       "mcp__ide__getDiagnostics",
       "Bash(cat:*)",
       "WebFetch(domain:preview.codecanyon.net)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(del \"D:\\repos\\BODAINSURE\\docker\\dev\\docker-entrypoint.sh\")",
+      "Bash(if exist \"D:\\repos\\BODAINSURE\\docker\\dev\\docker-entrypoint.sh\" del \"D:\\repos\\BODAINSURE\\docker\\dev\\docker-entrypoint.sh\")",
+      "Bash(docker logs:*)",
+      "Bash(docker compose:*)",
+      "Bash(timeout 60 docker logs:*)",
+      "Bash(timeout 90 docker logs:*)",
+      "Bash(timeout 120 docker logs:*)",
+      "Bash(docker exec:*)",
+      "Bash(timeout 30 docker logs:*)",
+      "Bash(docker ps:*)",
+      "Bash(curl:*)",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\ref_docs\\guides\" mkdir \"D:\\repos\\BODAINSURE\\ref_docs\\guides\")",
+      "Bash(if not exist \"D:\\repos\\BODAINSURE\\ref_docs\\architecture\" mkdir \"D:\\repos\\BODAINSURE\\ref_docs\\architecture\")",
+      "Bash(mkdir:*)"
     ]
   }
 }

@@ -352,9 +352,9 @@ export class LocalStorageProvider implements IStorageProvider {
    * Returns a placeholder that indicates local storage is in use
    */
   async getSignedUploadUrl(
-    bucket: StorageBucket,
-    userId: string,
-    fileName: string,
+    _bucket: StorageBucket,
+    _userId: string,
+    _fileName: string,
     _options?: StorageSignedUrlOptions,
   ): Promise<StorageSignedUrlResult> {
     // Local storage doesn't support signed URLs
@@ -369,9 +369,9 @@ export class LocalStorageProvider implements IStorageProvider {
    * Generate a signed URL for download (not supported for local storage)
    */
   async getSignedDownloadUrl(
-    bucket: StorageBucket,
-    userId: string,
-    fileName: string,
+    _bucket: StorageBucket,
+    _userId: string,
+    _fileName: string,
     _options?: StorageSignedUrlOptions,
   ): Promise<StorageSignedUrlResult> {
     // Local storage doesn't support signed URLs

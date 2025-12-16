@@ -693,6 +693,8 @@ describe('UssdService - Edge Cases', () => {
 
     service = module.get<UssdService>(UssdService);
     userService = module.get(UserService);
+    // Suppress unused variable warning - userService is available for future tests
+    void userService;
   });
 
   it('should handle empty input gracefully', async () => {

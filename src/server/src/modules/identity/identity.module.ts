@@ -1,6 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NotificationModule } from '../notification/notification.module.js';
@@ -16,6 +16,7 @@ import { UserService } from './services/user.service.js';
 import { OtpService } from './services/otp.service.js';
 import { SessionService } from './services/session.service.js';
 import { DataExportService } from './services/data-export.service.js';
+import { SeederService } from './services/seeder.service.js';
 
 // Controllers
 import { AuthController } from './controllers/auth.controller.js';
@@ -41,7 +42,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
     // Per CLAUDE.md Section 6.1: JWT tokens with RS256 signing
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => {
+      useFactory: (configService: ConfigService): JwtModuleOptions => {
         const algorithm = configService.get<string>('app.jwt.algorithm', 'HS256');
         const privateKey = configService.get<string>('app.jwt.privateKey');
         const publicKey = configService.get<string>('app.jwt.publicKey');
@@ -55,12 +56,12 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
             publicKey,
             signOptions: {
               algorithm: 'RS256',
-              expiresIn,
+              expiresIn: expiresIn as unknown as undefined,
             },
             verifyOptions: {
               algorithms: ['RS256'],
             },
-          };
+          } as JwtModuleOptions;
         }
 
         // Fallback to HS256
@@ -71,9 +72,9 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
           secret,
           signOptions: {
             algorithm: 'HS256',
-            expiresIn,
+            expiresIn: expiresIn as unknown as undefined,
           },
-        };
+        } as JwtModuleOptions;
       },
       inject: [ConfigService],
     }),
@@ -86,6 +87,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
     OtpService,
     SessionService,
     DataExportService,
+    SeederService,
 
     // Strategies
     JwtStrategy,
@@ -100,6 +102,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
     OtpService,
     SessionService,
     DataExportService,
+    SeederService,
     JwtStrategy,
     PassportModule,
     JwtModule,

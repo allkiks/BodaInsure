@@ -8,7 +8,7 @@ describe('PdfGenerationService', () => {
   let configService: ConfigService;
 
   const mockConfigService = {
-    get: jest.fn((key: string, defaultValue: string) => defaultValue),
+    get: jest.fn((_key: string, defaultValue: string) => defaultValue),
   };
 
   beforeEach(async () => {
@@ -24,6 +24,8 @@ describe('PdfGenerationService', () => {
 
     service = module.get<PdfGenerationService>(PdfGenerationService);
     configService = module.get<ConfigService>(ConfigService);
+    // Suppress unused variable warning - configService is available for future tests
+    void configService;
   });
 
   afterEach(() => {
@@ -137,6 +139,8 @@ describe('PdfGenerationService', () => {
       }).compile();
 
       const customService = module.get<PdfGenerationService>(PdfGenerationService);
+      // Verify service was created and config was accessed
+      expect(customService).toBeDefined();
       expect(mockConfigService.get).toHaveBeenCalledWith('COMPANY_NAME', 'BodaInsure');
     });
 
@@ -151,10 +155,10 @@ describe('PdfGenerationService', () => {
     it('should include coverage dates in PDF', async () => {
       const result = await service.generatePolicyCertificate(mockPdfData);
 
-      // PDF should contain formatted dates
-      const pdfText = result.buffer.toString('binary');
-      // Check that some date-related content exists
+      // PDF should contain formatted dates - verify through file size
+      // Note: PDF content is compressed, so we verify structure instead of text
       expect(result.fileSize).toBeGreaterThan(1000); // Valid PDF should have reasonable size
+      expect(result.buffer).toBeInstanceOf(Buffer);
     });
 
     it('should generate unique filename with timestamp', async () => {

@@ -1,0 +1,271 @@
+# =============================================================================
+# BodaInsure Mobile - Docker Ignore
+# Expo / React Native / TypeScript
+# =============================================================================
+# Prevents unnecessary files from being copied into Docker images.
+# Useful for containerized CI/CD builds (EAS Build alternatives).
+# =============================================================================
+
+# =============================================================================
+# DEPENDENCIES (will be installed fresh in container)
+# =============================================================================
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+
+# =============================================================================
+# EXPO CACHE & BUILDS
+# =============================================================================
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# =============================================================================
+# NATIVE BUILDS (built separately or via EAS)
+# =============================================================================
+# iOS
+ios/
+*.xcworkspace
+*.xcodeproj
+Pods/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.xcuserstate
+*.dSYM.zip
+*.dSYM
+
+# Android
+android/
+*.apk
+*.aab
+*.jks
+.gradle/
+local.properties
+*.iml
+.cxx/
+
+# =============================================================================
+# ENVIRONMENT & SECRETS (passed via env vars)
+# =============================================================================
+.env
+.env.*
+!.env.example
+
+# Private keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.mobileprovision
+*.cer
+*.keystore
+!debug.keystore
+secrets/
+credentials/
+
+# Google Services (injected at build time)
+google-services.json
+GoogleService-Info.plist
+
+# =============================================================================
+# TESTING (not needed in build image)
+# =============================================================================
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+*.lcov
+jest-*.json
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__/
+test/
+tests/
+__mocks__/
+
+# Detox
+artifacts/
+e2e/
+
+# =============================================================================
+# IDE & EDITORS
+# =============================================================================
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+*.swp
+*.swo
+*~
+.netrwhist
+Session.vim
+.vim/
+*.sublime-workspace
+*.sublime-project
+xcuserdata/
+
+# =============================================================================
+# GIT
+# =============================================================================
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+.github/
+
+# =============================================================================
+# DOCUMENTATION
+# =============================================================================
+docs/
+*.md
+!README.md
+LICENSE
+CHANGELOG*
+CONTRIBUTING*
+AUTHORS*
+SECURITY*
+
+# =============================================================================
+# DOCKER FILES
+# =============================================================================
+Dockerfile*
+docker-compose*
+.dockerignore
+docker/
+
+# =============================================================================
+# CI/CD
+# =============================================================================
+.circleci/
+.travis.yml
+.gitlab-ci.yml
+azure-pipelines.yml
+Jenkinsfile
+.github/workflows/
+bitbucket-pipelines.yml
+
+# =============================================================================
+# OS FILES
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+.directory
+.Trash-*
+*.dmg
+
+# =============================================================================
+# LOGS
+# =============================================================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+metro-*.log
+adb.log
+
+# =============================================================================
+# RUNTIME & CACHE
+# =============================================================================
+.cache/
+.npm/
+.eslintcache
+.stylelintcache
+.metro-health-check*
+*.tsbuildinfo
+buck-out/
+\.buckd/
+
+# =============================================================================
+# TEMPORARY FILES
+# =============================================================================
+temp/
+tmp/
+*.tmp
+*.temp
+
+# =============================================================================
+# BUNDLE OUTPUT
+# =============================================================================
+*.bundle
+*.jsbundle
+sourcemaps/
+
+# =============================================================================
+# FASTLANE
+# =============================================================================
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+fastlane/readme.md
+
+# =============================================================================
+# COCOAPODS
+# =============================================================================
+Pods/
+Podfile.lock
+
+# =============================================================================
+# RUBY
+# =============================================================================
+vendor/bundle/
+.bundle/
+Gemfile.lock
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+# Storybook
+storybook-static/
+.storybook/
+.storybook-out/
+.ondevice/
+
+# Editor configs
+.editorconfig
+.prettierrc*
+.eslintrc*
+eslint.config.*
+tsconfig.*.json
+!tsconfig.json
+
+# App distribution artifacts
+*.ipa
+*.apk
+*.aab
+
+# Crashlytics
+crashlytics-build.properties
+fabric.properties
+
+# Package manager locks (use specific one)
+# Uncomment the ones you DON'T use:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml

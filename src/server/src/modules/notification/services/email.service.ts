@@ -643,7 +643,7 @@ BodaInsure Team
    * Generate plain text version from template context
    */
   private generatePlainText(
-    template: string,
+    _template: string,
     context: Record<string, unknown>,
   ): string {
     // Generate basic plain text from context

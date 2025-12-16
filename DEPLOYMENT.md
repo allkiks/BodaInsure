@@ -1,9 +1,11 @@
 # BodaInsure Deployment Guide
 
-This guide covers deployment procedures for all BodaInsure platform components:
+This guide covers **production deployment** procedures for all BodaInsure platform components:
 - **Backend API** (NestJS)
 - **Web Portal** (React/Vite)
 - **Mobile App** (React Native/Expo)
+
+> **Looking for local development setup?** See [DEVELOPMENT.md](DEVELOPMENT.md) for the Docker-based development environment with `make dev-docker`.
 
 ---
 
@@ -442,7 +444,24 @@ eas update --branch production --message "Bug fixes and improvements"
 
 ## 6. Docker Deployment
 
-### 6.1 Build Docker Images
+### 6.0 Development vs Production
+
+BodaInsure provides two Docker configurations:
+
+| Environment | Location | Purpose |
+|-------------|----------|---------|
+| **Development** | `docker/dev/` | Local development with hot-reload |
+| **Production** | `docker/prod/` | Production deployment |
+
+**For local development**, use the one-command setup:
+```bash
+make dev-docker          # Linux/Mac/Git Bash
+dev-docker.cmd start     # Windows CMD
+```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for complete development setup guide.
+
+### 6.1 Build Docker Images (Production)
 
 ```bash
 # Build backend image
@@ -1046,6 +1065,16 @@ redis-cli -h $REDIS_HOST -a $REDIS_PASSWORD ping
 curl -X POST https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials \
   -H "Authorization: Basic $(echo -n $MPESA_CONSUMER_KEY:$MPESA_CONSUMER_SECRET | base64)"
 ```
+
+---
+
+## 13. Additional Resources
+
+For more detailed information, refer to:
+
+- [Configuration Guide](./ref_docs/guides/configuration-guide.md) - Complete environment variable reference
+- [User Guides](./ref_docs/guides/) - Role-specific documentation
+- [DEVELOPMENT.md](./DEVELOPMENT.md) - Local development setup
 
 ---
 

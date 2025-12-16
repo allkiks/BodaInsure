@@ -1,9 +1,11 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
+import type { Job } from 'bullmq';
 import {
   QueueName,
   NotificationJobType,
+} from '../interfaces/job.interface.js';
+import type {
   NotificationJobData,
   JobResult,
   SmsJobData,
@@ -76,7 +78,7 @@ export class NotificationProcessor extends WorkerHost {
           break;
 
         default:
-          throw new Error(`Unknown notification job type: ${job.data.type}`);
+          throw new Error(`Unknown notification job type: ${(job.data as NotificationJobData).type}`);
       }
 
       const duration = Date.now() - startTime;

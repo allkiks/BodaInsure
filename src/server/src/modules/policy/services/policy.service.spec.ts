@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository, In, LessThan } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PolicyService } from './policy.service.js';
 import { BatchProcessingService, PolicyIssuanceRequest } from './batch-processing.service.js';
@@ -54,6 +54,10 @@ describe('PolicyService', () => {
     policyRepository = module.get(getRepositoryToken(Policy));
     documentRepository = module.get(getRepositoryToken(PolicyDocument));
     batchProcessingService = module.get(BatchProcessingService);
+    // Suppress unused variable warnings - these are available for future tests
+    void policyRepository;
+    void documentRepository;
+    void batchProcessingService;
   });
 
   afterEach(() => {
@@ -79,7 +83,7 @@ describe('PolicyService', () => {
         status: PolicyStatus.PENDING_ISSUANCE,
       };
 
-      mockBatchProcessingService.createPendingPolicy.mockResolvedValue(mockPolicy as Policy);
+      mockBatchProcessingService.createPendingPolicy.mockResolvedValue(mockPolicy as unknown as Policy);
 
       const result = await service.queuePolicyIssuance(request);
 
@@ -132,8 +136,8 @@ describe('PolicyService', () => {
         order: { createdAt: 'DESC' },
       });
       expect(result).toHaveLength(2);
-      expect(result[0].documentAvailable).toBe(true);
-      expect(result[1].documentAvailable).toBe(false);
+      expect(result[0]!.documentAvailable).toBe(true);
+      expect(result[1]!.documentAvailable).toBe(false);
     });
 
     it('should return empty array if user has no policies', async () => {
@@ -272,13 +276,13 @@ describe('PolicyService', () => {
         status: DocumentStatus.GENERATED,
       };
 
-      mockPolicyRepository.findOne.mockResolvedValue(mockPolicy as Policy);
-      mockDocumentRepository.findOne.mockResolvedValue(mockDocument as PolicyDocument);
+      mockPolicyRepository.findOne.mockResolvedValue(mockPolicy as unknown as Policy);
+      mockDocumentRepository.findOne.mockResolvedValue(mockDocument as unknown as PolicyDocument);
       mockDocumentRepository.save.mockResolvedValue({
         ...mockDocument,
         downloadCount: 6,
         lastDownloadedAt: new Date(),
-      } as PolicyDocument);
+      } as unknown as PolicyDocument);
 
       const result = await service.getPolicyDocument(policyId, userId);
 
@@ -548,12 +552,12 @@ describe('PolicyService', () => {
         metadata: {},
       };
 
-      mockPolicyRepository.findOne.mockResolvedValue(mockPolicy as Policy);
+      mockPolicyRepository.findOne.mockResolvedValue(mockPolicy as unknown as Policy);
       mockPolicyRepository.save.mockResolvedValue({
         ...mockPolicy,
         status: PolicyStatus.EXPIRED,
         metadata: { expiredAt: expect.any(String) },
-      } as Policy);
+      } as unknown as Policy);
 
       const result = await service.updatePolicyStatus(policyId, PolicyStatus.EXPIRED);
 
@@ -572,12 +576,12 @@ describe('PolicyService', () => {
         metadata: {},
       };
 
-      mockPolicyRepository.findOne.mockResolvedValue(mockPolicy as Policy);
+      mockPolicyRepository.findOne.mockResolvedValue(mockPolicy as unknown as Policy);
       mockPolicyRepository.save.mockResolvedValue({
         ...mockPolicy,
         status: PolicyStatus.LAPSED,
         metadata: { lapsedAt: expect.any(String) },
-      } as Policy);
+      } as unknown as Policy);
 
       const result = await service.updatePolicyStatus(policyId, PolicyStatus.LAPSED);
 
@@ -592,7 +596,7 @@ describe('PolicyService', () => {
         metadata: { existingKey: 'existingValue' },
       };
 
-      mockPolicyRepository.findOne.mockResolvedValue(mockPolicy as Policy);
+      mockPolicyRepository.findOne.mockResolvedValue(mockPolicy as unknown as Policy);
       mockPolicyRepository.save.mockImplementation(async (policy: Policy) => policy);
 
       await service.updatePolicyStatus(policyId, PolicyStatus.EXPIRED);

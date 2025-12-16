@@ -28,6 +28,8 @@ import {
   RefreshTokenResponseDto,
   ResendOtpDto,
   ResendOtpResponseDto,
+  AdminLoginDto,
+  AdminLoginResponseDto,
 } from '../dto/index.js';
 import { DeviceType } from '../entities/session.entity.js';
 import { Public } from '../../../common/decorators/public.decorator.js';
@@ -131,6 +133,43 @@ export class AuthController {
     const userAgent = req.get('user-agent');
 
     return this.authService.login(dto, ipAddress, userAgent);
+  }
+
+  /**
+   * Admin login with username/password
+   * POST /api/v1/auth/admin/login
+   *
+   * This endpoint is specifically for admin accounts:
+   * - PLATFORM_ADMIN
+   * - INSURANCE_ADMIN
+   * - KBA_ADMIN
+   * - SACCO_ADMIN
+   *
+   * Regular riders should use the phone/OTP login flow instead.
+   */
+  @Post('admin/login')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Admin login',
+    description: 'Login with username and password. For admin accounts only.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Admin login result',
+    type: AdminLoginResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  async adminLogin(
+    @Body() dto: AdminLoginDto,
+    @Req() req: Request,
+    @Headers('x-device-type') deviceTypeHeader?: string,
+  ): Promise<AdminLoginResponseDto> {
+    const ipAddress = this.getClientIp(req);
+    const userAgent = req.get('user-agent');
+    const deviceType = this.parseDeviceType(deviceTypeHeader);
+
+    return this.authService.adminLogin(dto, deviceType, ipAddress, userAgent);
   }
 
   /**

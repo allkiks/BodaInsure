@@ -44,6 +44,7 @@
     "@radix-ui/react-tooltip": "^1.1.6"
   },
   "devDependencies": {
+    "@tanstack/react-query-devtools": "^5.62.8",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",

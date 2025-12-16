@@ -172,7 +172,7 @@ export class AdvantasmsProvider implements ISmsProvider {
 
     // Check if enabled
     if (!this.enabled) {
-      for (const msg of request.messages) {
+      for (const _msg of request.messages) {
         results.push({
           success: true,
           messageId: `dev-adv-${Date.now()}-${results.length}`,

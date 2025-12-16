@@ -205,8 +205,6 @@ export class BatchSchedulerService {
    * Execute policy batch processing
    */
   private async runPolicyBatch(schedule: BatchScheduleType): Promise<void> {
-    const startedAt = new Date();
-
     try {
       if (!this.policyBatchHandler) {
         this.logger.warn('No policy batch handler registered');

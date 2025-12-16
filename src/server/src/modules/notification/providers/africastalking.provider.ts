@@ -148,7 +148,7 @@ export class AfricasTalkingProvider implements ISmsProvider {
 
     // Check if enabled
     if (!this.enabled) {
-      for (const msg of request.messages) {
+      for (const _msg of request.messages) {
         results.push({
           success: true,
           messageId: `dev-at-${Date.now()}-${results.length}`,
@@ -349,10 +349,11 @@ export class AfricasTalkingProvider implements ISmsProvider {
   ): Record<string, ISendSmsRequest[]> {
     return messages.reduce(
       (acc, msg) => {
-        if (!acc[msg.message]) {
-          acc[msg.message] = [];
+        const key = msg.message;
+        if (!acc[key]) {
+          acc[key] = [];
         }
-        acc[msg.message].push(msg);
+        acc[key]!.push(msg);
         return acc;
       },
       {} as Record<string, ISendSmsRequest[]>,

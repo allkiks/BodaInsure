@@ -1,65 +1,218 @@
-# BodaInsure Server Docker Ignore
-# Prevents unnecessary files from being copied into Docker images
+# =============================================================================
+# BodaInsure Server - Docker Ignore
+# NestJS / Node.js / TypeScript
+# =============================================================================
+# Prevents unnecessary files from being copied into Docker images,
+# reducing build time and image size.
+# =============================================================================
 
-# Dependencies
+# =============================================================================
+# DEPENDENCIES (will be installed fresh in container)
+# =============================================================================
 node_modules/
 .pnp
 .pnp.js
+.yarn/
 
-# Build outputs
+# =============================================================================
+# BUILD OUTPUT (will be built in container)
+# =============================================================================
 dist/
 build/
+out/
 *.tsbuildinfo
+*.js.map
+*.d.ts.map
 
-# Test files
-coverage/
-*.test.ts
-*.spec.ts
-__tests__/
-test/
-
-# Development files
+# =============================================================================
+# ENVIRONMENT & SECRETS (passed via env vars in production)
+# =============================================================================
 .env
 .env.*
 !.env.example
 
-# IDE and editor files
+# Private keys and certificates (mounted as secrets)
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# =============================================================================
+# TESTING (not needed in production image)
+# =============================================================================
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+*.lcov
+jest-*.json
+
+# Test files
+*.test.ts
+*.spec.ts
+*.test.js
+*.spec.js
+__tests__/
+test/
+tests/
+__mocks__/
+
+# =============================================================================
+# IDE & EDITORS
+# =============================================================================
 .vscode/
 .idea/
+*.iml
+*.iws
+*.ipr
 *.swp
 *.swo
 *~
+.netrwhist
+Session.vim
+.vim/
+*.sublime-workspace
+*.sublime-project
 
-# Git
+# =============================================================================
+# GIT
+# =============================================================================
 .git/
 .gitignore
 .gitattributes
+.gitmodules
+.github/
 
-# Documentation
+# =============================================================================
+# DOCUMENTATION (not needed in runtime)
+# =============================================================================
 docs/
 *.md
+!README.md
 LICENSE
+CHANGELOG*
+CONTRIBUTING*
+AUTHORS*
+SECURITY*
 
-# Docker files (we don't need to copy these into the container)
+# =============================================================================
+# DOCKER FILES (don't need to copy into image)
+# =============================================================================
 Dockerfile*
 docker-compose*
 .dockerignore
+docker/
 
-# Logs
+# =============================================================================
+# CI/CD
+# =============================================================================
+.circleci/
+.travis.yml
+.gitlab-ci.yml
+azure-pipelines.yml
+Jenkinsfile
+.github/workflows/
+bitbucket-pipelines.yml
+
+# =============================================================================
+# OS FILES
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+.directory
+.Trash-*
+
+# =============================================================================
+# LOGS
+# =============================================================================
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# OS files
-.DS_Store
-Thumbs.db
+# =============================================================================
+# RUNTIME & CACHE
+# =============================================================================
+.cache/
+.parcel-cache/
+.npm/
+.eslintcache
+.stylelintcache
 
-# Temporary files
-tmp/
+# =============================================================================
+# LOCAL STORAGE & UPLOADS (use volumes in production)
+# =============================================================================
+uploads/
+docstore/
+storage/
 temp/
+tmp/
 *.tmp
+*.temp
 
-# Debug
-.nyc_output/
+# =============================================================================
+# DATABASE FILES
+# =============================================================================
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+!src/database/migrations/*.sql
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+# Kubernetes manifests (deployed separately)
+k8s/
+kubernetes/
+helm/
+charts/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tf
+
+# Make/Scripts
+Makefile
+*.sh
+!docker-entrypoint.sh
+
+# Turborepo
+.turbo
+
+# Storybook
+storybook-static/
+.storybook/
+
+# Playwright
+playwright-report/
+playwright/.cache/
+
+# Editor configs
+.editorconfig
+.prettierrc*
+.eslintrc*
+eslint.config.*
+tsconfig.*.json
+!tsconfig.json
+
+# Package manager locks (use specific one)
+# Uncomment the ones you DON'T use:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml

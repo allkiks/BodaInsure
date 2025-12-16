@@ -6,6 +6,7 @@
 export interface User {
   id: string;
   phone: string;
+  username?: string;
   firstName?: string;
   lastName?: string;
   email?: string;
@@ -19,7 +20,7 @@ export interface User {
   updatedAt: string;
 }
 
-export type UserRole = 'super_admin' | 'admin' | 'support' | 'viewer' | 'rider';
+export type UserRole = 'rider' | 'sacco_admin' | 'kba_admin' | 'insurance_admin' | 'platform_admin';
 
 export type UserStatus = 'active' | 'inactive' | 'suspended' | 'pending';
 
@@ -248,4 +249,25 @@ export interface OtpVerifyResponse {
   token: string;
   user: User;
   expiresAt: string;
+}
+
+// Admin login types
+export interface AdminLoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface AdminLoginResponse {
+  status: 'SUCCESS' | 'INVALID_CREDENTIALS' | 'ACCOUNT_LOCKED' | 'ACCOUNT_SUSPENDED' | 'ACCOUNT_INACTIVE';
+  message: string;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  user?: {
+    id: string;
+    username: string;
+    role: string;
+    status: string;
+  };
+  lockedUntil?: string;
 }

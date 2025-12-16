@@ -111,7 +111,7 @@ export class DashboardService {
     const [userStats] = await this.dataSource.query(`
       SELECT
         COUNT(*) as total_users,
-        COUNT(*) FILTER (WHERE is_active = true) as active_users,
+        COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_users,
         COUNT(*) FILTER (WHERE created_at >= $1) as new_today,
         COUNT(*) FILTER (WHERE created_at >= $2) as new_this_week,
         COUNT(*) FILTER (WHERE created_at >= $3) as new_this_month
@@ -128,14 +128,9 @@ export class DashboardService {
       WHERE deleted_at IS NULL ${orgFilter}
     `);
 
-    const byCounty = await this.dataSource.query(`
-      SELECT county_code as "countyCode", COUNT(*) as count
-      FROM users u
-      WHERE county_code IS NOT NULL AND deleted_at IS NULL ${orgFilter}
-      GROUP BY county_code
-      ORDER BY count DESC
-      LIMIT 10
-    `);
+    // Note: county_code column doesn't exist in users table yet
+    // This will return empty array until the column is added
+    const byCounty: Array<{ countyCode: string; count: string }> = [];
 
     return {
       totalUsers: parseInt(userStats?.total_users || '0', 10),
@@ -226,8 +221,8 @@ export class DashboardService {
       SELECT
         COUNT(*) as total_policies,
         COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_policies,
-        COUNT(*) FILTER (WHERE status = 'ACTIVE' AND end_date BETWEEN $1 AND $2) as expiring_this_week,
-        COUNT(*) FILTER (WHERE status = 'ACTIVE' AND end_date BETWEEN $1 AND $3) as expiring_this_month,
+        COUNT(*) FILTER (WHERE status = 'ACTIVE' AND expires_at BETWEEN $1 AND $2) as expiring_this_week,
+        COUNT(*) FILTER (WHERE status = 'ACTIVE' AND expires_at BETWEEN $1 AND $3) as expiring_this_month,
         COUNT(*) FILTER (WHERE created_at >= $1) as issued_today,
         COUNT(*) FILTER (WHERE created_at >= $4) as issued_this_week,
         COUNT(*) FILTER (WHERE created_at >= $5) as issued_this_month,
@@ -236,12 +231,9 @@ export class DashboardService {
       WHERE 1=1 ${orgFilter}
     `, [today, weekFromNow, monthFromNow, weekAgo, monthAgo]);
 
-    // Calculate average days to completion for completed payment journeys
-    const [avgDays] = await this.dataSource.query(`
-      SELECT COALESCE(AVG(EXTRACT(DAY FROM (policy2_issued_at - created_at))), 0) as avg_days
-      FROM user_journeys
-      WHERE policy2_issued_at IS NOT NULL
-    `);
+    // Note: user_journeys table doesn't exist yet
+    // This will return 0 until the table is added
+    const avgDays = { avg_days: '0' };
 
     return {
       totalPolicies: parseInt(stats?.total_policies || '0', 10),

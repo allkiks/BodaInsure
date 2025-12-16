@@ -43,6 +43,7 @@ export const PAGINATION = {
 export const API_ENDPOINTS = {
   // Auth
   AUTH_LOGIN: '/auth/login',
+  AUTH_ADMIN_LOGIN: '/auth/admin/login',
   AUTH_VERIFY_OTP: '/auth/otp/verify',
   AUTH_REFRESH: '/auth/refresh',
   AUTH_LOGOUT: '/auth/logout',

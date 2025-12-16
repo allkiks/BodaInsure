@@ -218,9 +218,9 @@ export class UssdService {
 
     // Check session timeout
     if (Date.now() - session.lastActivityAt.getTime() > this.SESSION_TIMEOUT_MS) {
-      const lang = session.language;
+      const lang = session.language ?? 'en';
       this.sessions.delete(sessionId);
-      return this.endSession(TRANSLATIONS[lang].sessionTimeout);
+      return this.endSession(TRANSLATIONS[lang]?.sessionTimeout ?? 'Session expired');
     }
 
     // Update last activity
@@ -441,9 +441,9 @@ ${this.t(session, 'dailyPayment')}: KES ${dailyAmount}
 ${this.t(session, 'remainingDays')}: ${remainingDays}
 
 ${this.t(session, 'payForDays')}
-1. ${options[0].label}
-2. ${options[1].label}
-3. ${options[2].label}
+1. ${options[0]?.label ?? '1 day'}
+2. ${options[1]?.label ?? '7 days'}
+3. ${options[2]?.label ?? 'All remaining'}
 0. ${this.t(session, 'back')}`,
       );
     } catch (error) {

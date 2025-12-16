@@ -179,6 +179,13 @@ export interface ReportExportJobData extends BaseJobData {
 }
 
 /**
+ * Report cleanup job data
+ */
+export interface ReportCleanupJobData extends BaseJobData {
+  type: ReportJobType.CLEANUP_EXPIRED;
+}
+
+/**
  * KYC document validation job data
  */
 export interface KycValidationJobData extends BaseJobData {
@@ -237,7 +244,8 @@ export type PolicyQueueJobData =
  */
 export type ReportQueueJobData =
   | ReportGenerationJobData
-  | ReportExportJobData;
+  | ReportExportJobData
+  | ReportCleanupJobData;
 
 /**
  * Job result interface

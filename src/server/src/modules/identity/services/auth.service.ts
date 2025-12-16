@@ -9,12 +9,13 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import * as bcrypt from 'bcrypt';
 import { UserService } from './user.service.js';
 import { OtpService } from './otp.service.js';
 import { SessionService } from './session.service.js';
 import { OtpPurpose } from '../entities/otp.entity.js';
 import { DeviceType } from '../entities/session.entity.js';
-import { UserStatus, Language } from '../entities/user.entity.js';
+import { UserStatus, UserRole, Language } from '../entities/user.entity.js';
 import { normalizePhoneToE164 } from '../../../common/utils/phone.util.js';
 import { SmsService } from '../../notification/services/sms.service.js';
 import {
@@ -26,6 +27,8 @@ import {
   LoginResponseDto,
   RefreshTokenDto,
   RefreshTokenResponseDto,
+  AdminLoginDto,
+  AdminLoginResponseDto,
 } from '../dto/index.js';
 
 export interface JwtPayload {
@@ -93,7 +96,7 @@ export class AuthService {
         }
 
         // Send SMS with OTP per GAP-003
-        await this.sendOtpSms(normalizedPhone, otpResult.otp, 'registration');
+        await this.sendOtpSms(normalizedPhone, otpResult.otp!, 'registration');
 
         return {
           status: 'SUCCESS',
@@ -136,7 +139,7 @@ export class AuthService {
     }
 
     // Send SMS with OTP per GAP-003
-    await this.sendOtpSms(normalizedPhone, otpResult.otp, 'registration');
+    await this.sendOtpSms(normalizedPhone, otpResult.otp!, 'registration');
 
     return {
       status: 'SUCCESS',
@@ -303,11 +306,149 @@ export class AuthService {
     }
 
     // Send SMS with OTP per GAP-003
-    await this.sendOtpSms(normalizedPhone, otpResult.otp, 'login');
+    await this.sendOtpSms(normalizedPhone, otpResult.otp!, 'login');
 
     return {
       status: 'OTP_SENT',
       message: 'Verification code sent to your phone',
+    };
+  }
+
+  /**
+   * Admin login with username/password
+   * This flow is specifically for admin accounts (PLATFORM_ADMIN, INSURANCE_ADMIN, KBA_ADMIN, SACCO_ADMIN)
+   * Coexists with the phone/OTP flow for regular users
+   */
+  async adminLogin(
+    dto: AdminLoginDto,
+    deviceType: DeviceType = DeviceType.WEB,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<AdminLoginResponseDto> {
+    // Find user by username
+    const user = await this.userService.findByUsername(dto.username);
+    if (!user) {
+      this.logger.warn(`Admin login failed: username not found - ${dto.username}`);
+      return {
+        status: 'INVALID_CREDENTIALS',
+        message: 'Invalid username or password',
+      };
+    }
+
+    // Verify this is an admin account (has password hash)
+    if (!user.passwordHash) {
+      this.logger.warn(`Admin login failed: user has no password - ${dto.username}`);
+      return {
+        status: 'INVALID_CREDENTIALS',
+        message: 'Invalid username or password',
+      };
+    }
+
+    // Verify the user has an admin role
+    const adminRoles = [
+      UserRole.PLATFORM_ADMIN,
+      UserRole.INSURANCE_ADMIN,
+      UserRole.KBA_ADMIN,
+      UserRole.SACCO_ADMIN,
+    ];
+    if (!adminRoles.includes(user.role as UserRole)) {
+      this.logger.warn(`Admin login failed: user is not admin - ${dto.username}`);
+      return {
+        status: 'INVALID_CREDENTIALS',
+        message: 'Invalid username or password',
+      };
+    }
+
+    // Check account status
+    if (user.status === UserStatus.SUSPENDED) {
+      return {
+        status: 'ACCOUNT_SUSPENDED',
+        message: 'Your account has been suspended. Please contact support.',
+      };
+    }
+
+    if (user.status === UserStatus.DEACTIVATED) {
+      return {
+        status: 'ACCOUNT_INACTIVE',
+        message: 'Account is no longer active.',
+      };
+    }
+
+    // Check if account is locked
+    const lockStatus = await this.userService.isAccountLocked(user.id);
+    if (lockStatus.isLocked) {
+      return {
+        status: 'ACCOUNT_LOCKED',
+        message: 'Account is temporarily locked due to too many failed attempts.',
+        lockedUntil: lockStatus.lockedUntil,
+      };
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!isPasswordValid) {
+      // Record failed login attempt
+      const lockResult = await this.userService.recordFailedLogin(user.id);
+      this.logger.warn(`Admin login failed: invalid password - ${dto.username}`);
+
+      if (lockResult.isLocked) {
+        return {
+          status: 'ACCOUNT_LOCKED',
+          message: 'Account is temporarily locked due to too many failed attempts.',
+          lockedUntil: lockResult.lockedUntil,
+        };
+      }
+
+      return {
+        status: 'INVALID_CREDENTIALS',
+        message: 'Invalid username or password',
+      };
+    }
+
+    // Ensure user is active (might be PENDING for some reason)
+    if (user.status !== UserStatus.ACTIVE) {
+      return {
+        status: 'ACCOUNT_INACTIVE',
+        message: 'Account is not active. Please contact support.',
+      };
+    }
+
+    // Update last login
+    await this.userService.updateLastLogin(user.id);
+
+    // Create session
+    const sessionTokens = await this.sessionService.createSession({
+      userId: user.id,
+      deviceType,
+      ipAddress,
+      userAgent,
+    });
+
+    // Generate JWT
+    const payload: JwtPayload = {
+      sub: user.id,
+      phone: user.phone,
+      role: user.role,
+      organizationId: user.organizationId,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+    const expiresIn = this.getExpiresInSeconds();
+
+    this.logger.log(`Admin login successful: ${dto.username}`);
+
+    return {
+      status: 'SUCCESS',
+      message: 'Login successful',
+      accessToken,
+      refreshToken: sessionTokens.refreshToken,
+      expiresIn,
+      user: {
+        id: user.id,
+        username: user.username!,
+        role: user.role,
+        status: user.status,
+      },
     };
   }
 

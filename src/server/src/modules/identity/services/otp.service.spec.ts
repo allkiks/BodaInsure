@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
-import { OtpService, GenerateOtpResult, VerifyOtpResult } from './otp.service';
+import { OtpService, VerifyOtpResult } from './otp.service';
 import { Otp, OtpPurpose, OtpStatus } from '../entities/otp.entity';
 import { OTP_CONFIG } from '../../../common/constants';
 

@@ -123,7 +123,7 @@ export class AwsStorageProvider implements IStorageProvider {
    * Get the storage key (path) for a file
    */
   getStoragePath(
-    bucket: StorageBucket,
+    _bucket: StorageBucket,
     userId: string,
     fileName: string,
   ): string {

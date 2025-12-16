@@ -424,7 +424,6 @@ export class MpesaService {
   async initiateB2C(request: B2cRequest): Promise<B2cResponse> {
     const b2cShortcode = this.configService.get<string>('MPESA_B2C_SHORTCODE', this.shortcode);
     const initiatorName = this.configService.get<string>('MPESA_B2C_INITIATOR_NAME', '');
-    const initiatorPassword = this.configService.get<string>('MPESA_B2C_INITIATOR_PASSWORD', '');
     const securityCredential = this.configService.get<string>('MPESA_B2C_SECURITY_CREDENTIAL', '');
     const b2cResultUrl = this.configService.get<string>('MPESA_B2C_RESULT_URL', '');
     const b2cTimeoutUrl = this.configService.get<string>('MPESA_B2C_TIMEOUT_URL', '');

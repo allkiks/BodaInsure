@@ -1,28 +1,39 @@
 # BodaInsure Development Environment
-# Usage: docker-compose -f docker/dev/docker-compose.yml up -d
-
-version: '3.8'
+# 100% Docker-based development - all services run in containers
+#
+# Configuration: All environment variables are in .env (single source of truth)
+#
+# Usage:
+#   make dev-docker  (recommended)
+#   docker-compose -f docker/dev/docker-compose.yml up -d
 
 services:
+  # ===========================================
+  # INFRASTRUCTURE SERVICES
+  # ===========================================
+
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: bodainsure-postgres-dev
     restart: unless-stopped
     environment:
-      POSTGRES_USER: bodainsure
-      POSTGRES_PASSWORD: bodainsure
-      POSTGRES_DB: bodainsure
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
-      - "5432:5432"
+      - "${DB_PORT}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bodainsure -d bodainsure"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_NAME}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
+    networks:
+      - bodainsure-network
 
   # Redis for sessions and queues
   redis:
@@ -30,51 +41,17 @@ services:
     container_name: bodainsure-redis-dev
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
-
-  # Redis Commander (Web UI for Redis) - Dev only
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    container_name: bodainsure-redis-ui-dev
-    restart: unless-stopped
-    environment:
-      REDIS_HOSTS: local:redis:6379
-    ports:
-      - "8081:8081"
-    depends_on:
-      - redis
-
-  # pgAdmin (Web UI for PostgreSQL) - Dev only
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: bodainsure-pgadmin-dev
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@bodainsure.co.ke
-      PGADMIN_DEFAULT_PASSWORD: admin123
-      PGADMIN_CONFIG_SERVER_MODE: "False"
-    ports:
-      - "8080:80"
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      - postgres
-
-  # MailHog for email testing - Dev only
-  mailhog:
-    image: mailhog/mailhog:latest
-    container_name: bodainsure-mailhog-dev
-    restart: unless-stopped
-    ports:
-      - "1025:1025"  # SMTP
-      - "8025:8025"  # Web UI
+      retries: 10
+      start_period: 5s
+    networks:
+      - bodainsure-network
 
   # MinIO for S3-compatible object storage (KYC documents)
   minio:
@@ -83,18 +60,21 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: bodainsure
-      MINIO_ROOT_PASSWORD: bodainsure123
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
       - "9000:9000"  # S3 API
       - "9001:9001"  # Console UI
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - bodainsure-network
 
   # MinIO bucket initialization
   minio-init:
@@ -105,27 +85,158 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set bodainsure http://minio:9000 bodainsure bodainsure123;
+      echo '[MinIO Init] Configuring MinIO...';
+      mc alias set bodainsure http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
       mc mb --ignore-existing bodainsure/kyc-documents;
       mc mb --ignore-existing bodainsure/policy-documents;
       mc mb --ignore-existing bodainsure/claim-documents;
       mc anonymous set none bodainsure/kyc-documents;
       mc anonymous set none bodainsure/policy-documents;
       mc anonymous set none bodainsure/claim-documents;
-      echo 'MinIO buckets initialized';
+      echo '[MinIO Init] Buckets initialized successfully';
       exit 0;
       "
+    networks:
+      - bodainsure-network
+
+  # MailHog for email testing
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: bodainsure-mailhog-dev
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - bodainsure-network
+
+  # ===========================================
+  # APPLICATION SERVICES
+  # ===========================================
+
+  # Backend API Server
+  server:
+    build:
+      context: ../../src/server
+      dockerfile: ../../docker/dev/server.Dockerfile
+    container_name: bodainsure-server-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${PORT}:3000"
+    volumes:
+      # Mount source code for hot-reload
+      - ../../src/server/src:/app/src:delegated
+      - ../../src/server/test:/app/test:delegated
+      # Persist node_modules in container (don't overwrite with host)
+      - server_node_modules:/app/node_modules
+      # Persist uploads
+      - server_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - bodainsure-network
+
+  # Frontend Client (Admin Portal)
+  client:
+    build:
+      context: ../../src/client
+      dockerfile: ../../docker/dev/client.Dockerfile
+    container_name: bodainsure-client-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "5173:5173"
+    volumes:
+      # Mount source code for hot-reload
+      - ../../src/client/src:/app/src:delegated
+      - ../../src/client/public:/app/public:delegated
+      # Persist node_modules in container
+      - client_node_modules:/app/node_modules
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - bodainsure-network
+
+  # ===========================================
+  # DEVELOPMENT TOOLS (optional)
+  # ===========================================
+
+  # Redis Commander (Web UI for Redis)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: bodainsure-redis-ui-dev
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - tools
+    networks:
+      - bodainsure-network
+
+  # pgAdmin (Web UI for PostgreSQL)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: bodainsure-pgadmin-dev
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+    networks:
+      - bodainsure-network
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
+  minio_data:
+    driver: local
   pgadmin_data:
     driver: local
-  minio_data:
+  server_node_modules:
+    driver: local
+  client_node_modules:
+    driver: local
+  server_uploads:
     driver: local
 
 networks:
-  default:
+  bodainsure-network:
     name: bodainsure-dev-network
+    driver: bridge

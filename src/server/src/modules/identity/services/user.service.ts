@@ -87,6 +87,15 @@ export class UserService {
   }
 
   /**
+   * Find user by username (for admin authentication)
+   */
+  async findByUsername(username: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { username },
+    });
+  }
+
+  /**
    * Activate user after OTP verification
    */
   async activateUser(userId: string): Promise<User> {

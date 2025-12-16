@@ -1,8 +1,11 @@
 import { Injectable, Inject, Logger, OnModuleInit } from '@nestjs/common';
 import {
-  IStorageProvider,
   STORAGE_PROVIDER,
   StorageBucket,
+  StorageProviderType,
+} from '../interfaces/storage-provider.interface.js';
+import type {
+  IStorageProvider,
   StorageUploadOptions,
   StorageUploadResult,
   StorageDownloadResult,
@@ -12,7 +15,6 @@ import {
   StorageSignedUrlOptions,
   StorageSignedUrlResult,
   StorageExistsResult,
-  StorageProviderType,
 } from '../interfaces/storage-provider.interface.js';
 
 /**

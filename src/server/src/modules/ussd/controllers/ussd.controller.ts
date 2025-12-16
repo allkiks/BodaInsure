@@ -9,7 +9,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { UssdService, UssdProvider } from '../services/ussd.service.js';
 import { maskPhone } from '../../../common/utils/phone.util.js';
 
@@ -73,7 +73,7 @@ export class UssdController {
 
     // Parse input - AT sends empty string for initial dial, cumulative otherwise
     const inputArray = text === '' ? [] : text.split('*');
-    const lastInput = inputArray.length > 0 ? inputArray[inputArray.length - 1] : '';
+    const lastInput = inputArray.length > 0 ? inputArray[inputArray.length - 1] ?? '' : '';
 
     const response = await this.ussdService.processRequest({
       sessionId,
@@ -116,7 +116,7 @@ export class UssdController {
     // Parse input - Advantasms sends cumulative format (e.g., "33*1*87")
     // First element is often the shortcode identifier
     const inputArray = decodedInput ? decodedInput.split('*') : [];
-    const lastInput = inputArray.length > 0 ? inputArray[inputArray.length - 1] : '';
+    const lastInput = inputArray.length > 0 ? inputArray[inputArray.length - 1] ?? '' : '';
 
     const response = await this.ussdService.processRequest({
       sessionId: SESSIONID,

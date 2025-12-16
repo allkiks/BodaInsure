@@ -94,7 +94,10 @@ import { ReportingModule } from '../reporting/reporting.module.js';
         name: QueueName.REPORT,
         defaultJobOptions: {
           attempts: 2,
-          timeout: 300000, // 5 minute timeout for reports
+          backoff: {
+            type: 'exponential',
+            delay: 10000,
+          },
         },
       },
     ),

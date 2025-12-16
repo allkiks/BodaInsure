@@ -335,10 +335,11 @@ describe('NotificationProcessor', () => {
 
   describe('Error Handling', () => {
     it('should handle unknown job type', async () => {
+      // Intentionally invalid job data to test error handling
       const jobData = {
         type: 'unknown_type' as NotificationJobType,
         createdAt: new Date(),
-      };
+      } as unknown as SmsJobData;
 
       const result = await processor.process(createMockJob(jobData));
 

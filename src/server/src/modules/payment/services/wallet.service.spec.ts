@@ -52,6 +52,9 @@ describe('WalletService', () => {
     service = module.get<WalletService>(WalletService);
     walletRepository = module.get<Repository<Wallet>>(getRepositoryToken(Wallet));
     dataSource = module.get<DataSource>(DataSource);
+    // Suppress unused variable warnings - available for future tests
+    void walletRepository;
+    void dataSource;
   });
 
   afterEach(() => {

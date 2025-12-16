@@ -127,7 +127,7 @@ export class AzureStorageProvider implements IStorageProvider {
    * Get the storage path for a file
    */
   getStoragePath(
-    bucket: StorageBucket,
+    _bucket: StorageBucket,
     userId: string,
     fileName: string,
   ): string {

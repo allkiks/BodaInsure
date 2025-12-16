@@ -1,9 +1,11 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { Job } from 'bullmq';
+import type { Job } from 'bullmq';
 import {
   QueueName,
   ReportJobType,
+} from '../interfaces/job.interface.js';
+import type {
   ReportQueueJobData,
   JobResult,
   ReportGenerationJobData,
@@ -59,7 +61,7 @@ export class ReportProcessor extends WorkerHost {
           break;
 
         default:
-          throw new Error(`Unknown report job type: ${job.data.type}`);
+          throw new Error(`Unknown report job type: ${(job.data as ReportQueueJobData).type}`);
       }
 
       const duration = Date.now() - startTime;

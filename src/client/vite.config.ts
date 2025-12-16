@@ -12,9 +12,16 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Allow access from Docker container network
+    host: '0.0.0.0',
+    // Enable HMR for Docker
+    watch: {
+      usePolling: true,
+    },
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // Use 'server' hostname when running in Docker, 'localhost' otherwise
+        target: process.env.DOCKER_ENV === 'true' ? 'http://server:3000' : 'http://localhost:3000',
         changeOrigin: true,
       },
     },

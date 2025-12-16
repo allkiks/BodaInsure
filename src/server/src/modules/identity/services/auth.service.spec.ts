@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
-import { AuthService, JwtPayload } from './auth.service';
+import { AuthService } from './auth.service';
 import { UserService } from './user.service';
-import { OtpService, GenerateOtpResult, VerifyOtpResult } from './otp.service';
+import { OtpService, GenerateOtpResult } from './otp.service';
 import { SessionService, SessionTokens } from './session.service';
 import { OtpPurpose } from '../entities/otp.entity';
-import { DeviceType, Session, SessionStatus } from '../entities/session.entity';
+import { DeviceType, Session } from '../entities/session.entity';
 import {
   User,
   UserStatus,
