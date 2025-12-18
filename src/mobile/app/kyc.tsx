@@ -48,7 +48,7 @@ export default function KycScreen() {
 
   const uploadMutation = useMutation({
     mutationFn: ({ uri, type }: { uri: string; type: DocumentType }) =>
-      kycApi.uploadDocument(uri, type),
+      kycApi.uploadDocument(type, uri),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kycStatus'] });
     },
@@ -154,7 +154,7 @@ export default function KycScreen() {
   };
 
   // Already approved - show status
-  if (kycStatus?.status === 'approved') {
+  if (kycStatus?.overallStatus === 'approved') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -195,8 +195,8 @@ export default function KycScreen() {
         </View>
 
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-          {/* Status Card */}
-          {kycStatus?.status === 'pending' && (
+          {/* Pending Status Card */}
+          {kycStatus?.overallStatus === 'pending' && (
             <Card style={styles.statusCard}>
               <View style={styles.statusContent}>
                 <Ionicons name="time" size={32} color={COLORS.warning} />
@@ -205,6 +205,36 @@ export default function KycScreen() {
                   <Text style={styles.statusDesc}>{t('kyc.pendingDesc')}</Text>
                 </View>
               </View>
+            </Card>
+          )}
+
+          {/* Rejected Status Card with Reasons */}
+          {kycStatus?.overallStatus === 'rejected' && (
+            <Card style={styles.rejectedCard}>
+              <View style={styles.statusContent}>
+                <Ionicons name="close-circle" size={32} color={COLORS.error} />
+                <View style={styles.statusText}>
+                  <Text style={styles.statusTitle}>{t('kyc.statusRejected')}</Text>
+                  <Text style={styles.statusDesc}>{t('kyc.rejectedDesc')}</Text>
+                </View>
+              </View>
+
+              {/* List rejected documents with reasons */}
+              {kycStatus.documents
+                ?.filter((doc) => doc.status === 'rejected' && doc.rejectionReason)
+                .map((doc) => (
+                  <View key={doc.id} style={styles.rejectionItem}>
+                    <View style={styles.rejectionHeader}>
+                      <Ionicons name="alert-circle" size={16} color={COLORS.error} />
+                      <Text style={styles.rejectionDocName}>
+                        {t(`kyc.documentTypes.${doc.type}`) || doc.type}
+                      </Text>
+                    </View>
+                    <Text style={styles.rejectionReason}>{doc.rejectionReason}</Text>
+                  </View>
+                ))}
+
+              <Text style={styles.resubmitHint}>{t('kyc.resubmitHint')}</Text>
             </Card>
           )}
 
@@ -243,7 +273,7 @@ export default function KycScreen() {
 
         <View style={styles.footer}>
           <Button
-            title={kycStatus?.status === 'pending' ? t('kyc.resubmit') : t('kyc.startVerification')}
+            title={kycStatus?.overallStatus === 'pending' ? t('kyc.resubmit') : t('kyc.startVerification')}
             onPress={handleStartKyc}
             size="lg"
             style={styles.fullButton}
@@ -265,7 +295,7 @@ export default function KycScreen() {
             <Text style={styles.cameraStepText}>
               {currentDocIndex + 1} / {DOCUMENT_TYPES.length}
             </Text>
-            <ProgressBar progress={progress} height={4} style={styles.progressBar} />
+            <ProgressBar progress={progress} height={4} backgroundColor="rgba(255,255,255,0.3)" />
           </View>
           <TouchableOpacity onPress={toggleCameraFacing} style={styles.flipButton}>
             <Ionicons name="camera-reverse" size={28} color="#fff" />
@@ -373,7 +403,7 @@ export default function KycScreen() {
           </View>
           <Text style={styles.uploadingTitle}>{t('kyc.uploading')}</Text>
           <Text style={styles.uploadingDesc}>{t('kyc.uploadingDesc')}</Text>
-          <ProgressBar progress={0} height={8} style={styles.uploadProgress} />
+          <ProgressBar progress={0} height={8} />
         </View>
       </SafeAreaView>
     );
@@ -451,6 +481,42 @@ const styles = StyleSheet.create({
   statusCard: {
     backgroundColor: '#fef3c7',
     marginBottom: SPACING.lg,
+  },
+  rejectedCard: {
+    backgroundColor: '#fef2f2',
+    marginBottom: SPACING.lg,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  rejectionItem: {
+    marginTop: SPACING.md,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: '#fecaca',
+  },
+  rejectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  rejectionDocName: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.error,
+  },
+  rejectionReason: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text,
+    marginLeft: SPACING.md + 16, // Indent to align with text after icon
+    fontStyle: 'italic',
+  },
+  resubmitHint: {
+    marginTop: SPACING.lg,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   statusContent: {
     flexDirection: 'row',
@@ -595,9 +661,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: SPACING.xs,
   },
-  progressBar: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
   flipButton: {
     width: 44,
     height: 44,
@@ -730,9 +793,6 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     textAlign: 'center',
     marginBottom: SPACING.xl,
-  },
-  uploadProgress: {
-    width: '100%',
   },
   successIcon: {
     marginBottom: SPACING.lg,

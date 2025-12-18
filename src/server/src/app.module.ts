@@ -17,6 +17,7 @@ import { AuditModule } from './modules/audit/audit.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { UssdModule } from './modules/ussd/ussd.module.js';
 import { QueueModule } from './modules/queue/queue.module.js';
+import { AdminModule } from './modules/admin/admin.module.js';
 import appConfig from './config/app.config.js';
 import databaseConfig from './config/database.config.js';
 import redisConfig from './config/redis.config.js';
@@ -78,6 +79,7 @@ import redisConfig from './config/redis.config.js';
     AuditModule,
     HealthModule,
     UssdModule,
+    AdminModule,
 
     // Queue Module (BullMQ)
     QueueModule,

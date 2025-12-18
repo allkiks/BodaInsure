@@ -1,10 +1,10 @@
 import React from 'react';
-import { View, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, StyleProp, ViewStyle, TouchableOpacity } from 'react-native';
 import { COLORS, SPACING } from '@/config/constants';
 
 interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   variant?: 'elevated' | 'outlined' | 'filled';
 }

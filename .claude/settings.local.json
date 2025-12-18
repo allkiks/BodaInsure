@@ -31,7 +31,12 @@
       "Bash(curl:*)",
       "Bash(if not exist \"D:\\repos\\BODAINSURE\\ref_docs\\guides\" mkdir \"D:\\repos\\BODAINSURE\\ref_docs\\guides\")",
       "Bash(if not exist \"D:\\repos\\BODAINSURE\\ref_docs\\architecture\" mkdir \"D:\\repos\\BODAINSURE\\ref_docs\\architecture\")",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(timeout 15 docker logs:*)",
+      "Bash(timeout 180 docker logs:*)",
+      "Bash(npx expo install --fix)",
+      "Bash(npx tsc:*)",
+      "Bash(npx expo install:*)"
     ]
   }
 }

@@ -6,6 +6,7 @@
 export interface User {
   id: string;
   phone: string;
+  fullName?: string;
   firstName?: string;
   lastName?: string;
   email?: string;
@@ -15,6 +16,8 @@ export interface User {
   status: UserStatus;
   kycStatus: KycStatus;
   language: Language;
+  organizationId?: string;
+  reminderOptOut?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,7 +40,7 @@ export interface KycDocument {
   uploadedAt: string;
 }
 
-export type DocumentType = 'national_id_front' | 'national_id_back' | 'driving_license' | 'selfie';
+export type DocumentType = 'national_id_front' | 'national_id_back' | 'driving_license' | 'dl_front' | 'dl_back' | 'selfie';
 
 // Payment types
 export interface Payment {

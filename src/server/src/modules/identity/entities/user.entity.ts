@@ -326,4 +326,25 @@ export class User extends BaseEntity {
     default: false,
   })
   isSystemAccount!: boolean;
+
+  /**
+   * Scheduled deletion date (30-day grace period)
+   * Per Data Protection Act 2019: Right to Deletion with grace period
+   */
+  @Column({
+    name: 'deletion_scheduled_for',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  deletionScheduledFor?: Date;
+
+  /**
+   * Reason for account deletion request
+   */
+  @Column({
+    name: 'deletion_reason',
+    type: 'text',
+    nullable: true,
+  })
+  deletionReason?: string;
 }

@@ -36,16 +36,16 @@ export function Input({
       <View
         style={[
           styles.inputContainer,
-          isFocused && styles.inputContainerFocused,
-          error && styles.inputContainerError,
+          isFocused ? styles.inputContainerFocused : undefined,
+          error ? styles.inputContainerError : undefined,
         ]}
       >
         {leftIcon && <View style={styles.iconLeft}>{leftIcon}</View>}
         <TextInput
           style={[
             styles.input,
-            leftIcon && styles.inputWithLeftIcon,
-            rightIcon && styles.inputWithRightIcon,
+            leftIcon ? styles.inputWithLeftIcon : undefined,
+            rightIcon ? styles.inputWithRightIcon : undefined,
             style,
           ]}
           placeholderTextColor={COLORS.textLight}

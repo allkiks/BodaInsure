@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -33,16 +33,6 @@ export default function WalletScreen() {
 
   const formatCurrency = (amount: number) => {
     return `KES ${amount.toLocaleString()}`;
-  };
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-KE', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   return (

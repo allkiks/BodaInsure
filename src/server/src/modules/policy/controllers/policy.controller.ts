@@ -20,6 +20,9 @@ import {
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../../identity/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../../../common/guards/roles.guard.js';
+import { Roles } from '../../../common/decorators/roles.decorator.js';
+import { ROLES } from '../../../common/constants/index.js';
 import { CurrentUser } from '../../identity/decorators/current-user.decorator.js';
 import { PolicyService } from '../services/policy.service.js';
 import type { PolicySummary, PolicyDetails } from '../services/policy.service.js';
@@ -212,9 +215,14 @@ export class PolicyController {
 /**
  * Policy Batch Controller (Admin only)
  * Handles batch processing operations
+ *
+ * Security: Requires PLATFORM_ADMIN or INSURANCE_ADMIN role
  */
 @ApiTags('Policy Batches')
 @Controller('policy-batches')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(ROLES.PLATFORM_ADMIN, ROLES.INSURANCE_ADMIN)
+@ApiBearerAuth()
 export class PolicyBatchController {
   constructor(
     private readonly batchProcessingService: BatchProcessingService,

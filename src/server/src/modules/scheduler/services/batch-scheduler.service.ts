@@ -47,6 +47,7 @@ export class BatchSchedulerService {
   private paymentExpiryHandler?: () => Promise<number>;
   private gracePeriodCheckHandler?: () => Promise<number>;
   private reminderHandler?: () => Promise<number>;
+  private policyExpiryReminderHandler?: () => Promise<number>;
 
   constructor(private readonly configService: ConfigService) {
     this.isEnabled = this.configService.get<boolean>('SCHEDULER_ENABLED', true);
@@ -88,6 +89,14 @@ export class BatchSchedulerService {
   registerReminderHandler(handler: () => Promise<number>): void {
     this.reminderHandler = handler;
     this.logger.log('Reminder handler registered');
+  }
+
+  /**
+   * Register the policy expiry reminder handler
+   */
+  registerPolicyExpiryReminderHandler(handler: () => Promise<number>): void {
+    this.policyExpiryReminderHandler = handler;
+    this.logger.log('Policy expiry reminder handler registered');
   }
 
   /**
@@ -197,8 +206,16 @@ export class BatchSchedulerService {
     if (!this.isEnabled) return;
 
     this.logger.log('Starting policy expiry notification job');
-    // TODO: Implement policy expiry notification logic
-    // This would call the notification service to send reminders
+    try {
+      if (this.policyExpiryReminderHandler) {
+        const count = await this.policyExpiryReminderHandler();
+        this.logger.log(`Policy expiry reminders sent: ${count}`);
+      } else {
+        this.logger.warn('No policy expiry reminder handler registered');
+      }
+    } catch (error) {
+      this.logger.error(`Policy expiry notification job failed: ${error}`);
+    }
   }
 
   /**
@@ -254,6 +271,7 @@ export class BatchSchedulerService {
       paymentExpiry: boolean;
       gracePeriodCheck: boolean;
       reminder: boolean;
+      policyExpiryReminder: boolean;
     };
     nextBatchTimes: {
       batch1: string;
@@ -292,6 +310,7 @@ export class BatchSchedulerService {
         paymentExpiry: !!this.paymentExpiryHandler,
         gracePeriodCheck: !!this.gracePeriodCheckHandler,
         reminder: !!this.reminderHandler,
+        policyExpiryReminder: !!this.policyExpiryReminderHandler,
       },
       nextBatchTimes: {
         batch1: `${nextBatch1.toISOString()} (08:00 EAT)`,

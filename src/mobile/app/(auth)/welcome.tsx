@@ -1,12 +1,10 @@
-import { View, Text, StyleSheet, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
 import { COLORS, SPACING, FONT_SIZES } from '@/config/constants';
-
-const { width } = Dimensions.get('window');
 
 export default function WelcomeScreen() {
   const { t } = useTranslation();

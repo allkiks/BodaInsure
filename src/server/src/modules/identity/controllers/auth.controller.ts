@@ -136,27 +136,28 @@ export class AuthController {
   }
 
   /**
-   * Admin login with username/password
+   * Login with username/password
    * POST /api/v1/auth/admin/login
    *
-   * This endpoint is specifically for admin accounts:
-   * - PLATFORM_ADMIN
-   * - INSURANCE_ADMIN
-   * - KBA_ADMIN
-   * - SACCO_ADMIN
+   * This endpoint supports username/password authentication for any user
+   * that has a password set. The username can be:
+   * - A traditional username (e.g., 'SUPERUSER')
+   * - A phone number in local format (e.g., '0722000000')
+   * - A phone number in E.164 format (e.g., '+254722000000')
    *
-   * Regular riders should use the phone/OTP login flow instead.
+   * Default seeded users use their phone number as username.
+   * Regular users can also use the phone/OTP login flow.
    */
   @Post('admin/login')
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Admin login',
-    description: 'Login with username and password. For admin accounts only.',
+    summary: 'Password login',
+    description: 'Login with username/password. Username can be a phone number or traditional username.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Admin login result',
+    description: 'Password login result',
     type: AdminLoginResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid input' })

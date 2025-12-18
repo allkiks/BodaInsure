@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, KycStatus } from '../../identity/entities/user.entity.js';
@@ -9,6 +9,7 @@ import {
   DOCUMENT_TYPE_LABELS,
 } from '../entities/document.entity.js';
 import { KycStatusResponseDto, DocumentStatusDto } from '../dto/kyc-status.dto.js';
+import { NotificationService } from '../../notification/services/notification.service.js';
 
 /**
  * Number of rejections that triggers manual review flag
@@ -28,6 +29,8 @@ export class KycService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly documentService: DocumentService,
+    @Inject(forwardRef(() => NotificationService))
+    private readonly notificationService: NotificationService,
   ) {}
 
   /**
@@ -118,6 +121,7 @@ export class KycService {
 
     // Only update if status changed
     if (user.kycStatus !== newStatus) {
+      const previousStatus = user.kycStatus;
       user.kycStatus = newStatus;
       await this.userRepository.save(user);
 
@@ -125,8 +129,39 @@ export class KycService {
         `KYC status updated: userId=${userId.slice(0, 8)}... status=${newStatus}`,
       );
 
-      // TODO: Send notification on status change
-      // await this.notificationService.sendKycStatusUpdate(userId, newStatus);
+      // Send notification on status change
+      try {
+        if (newStatus === KycStatus.APPROVED) {
+          await this.notificationService.sendKycApproved(
+            userId,
+            user.phone,
+            user.fullName ?? 'Customer',
+          );
+          this.logger.log(`KYC approval notification sent for user ${userId.slice(0, 8)}...`);
+        } else if (newStatus === KycStatus.REJECTED && previousStatus !== KycStatus.REJECTED) {
+          // Get rejection reasons from documents
+          const documents = await this.documentService.getUserDocuments(userId);
+          const rejectedDocs = documents.filter(d => d.status === DocumentStatus.REJECTED);
+          const firstRejectedDoc = rejectedDocs[0];
+          const rejectionReason = firstRejectedDoc
+            ? firstRejectedDoc.rejectionReason ?? 'Document quality issues'
+            : 'Document quality issues';
+
+          await this.notificationService.sendKycRejected(
+            userId,
+            user.phone,
+            user.fullName ?? 'Customer',
+            rejectionReason,
+          );
+          this.logger.log(`KYC rejection notification sent for user ${userId.slice(0, 8)}...`);
+        }
+      } catch (notificationError) {
+        // Log but don't fail the KYC update if notification fails
+        this.logger.error(
+          `Failed to send KYC status notification for user ${userId.slice(0, 8)}...`,
+          notificationError,
+        );
+      }
     }
 
     return newStatus;

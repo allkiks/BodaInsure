@@ -12,7 +12,7 @@ import { COLORS, SPACING, FONT_SIZES, OTP_CONFIG } from '@/config/constants';
 
 export default function OtpScreen() {
   const { t } = useTranslation();
-  const { sessionId, phone, expiresAt } = useLocalSearchParams<{
+  const { sessionId, phone } = useLocalSearchParams<{
     sessionId: string;
     phone: string;
     expiresAt: string;
@@ -151,8 +151,8 @@ export default function OtpScreen() {
                 ref={(ref) => (inputRefs.current[index] = ref)}
                 style={[
                   styles.otpInput,
-                  digit && styles.otpInputFilled,
-                  error && styles.otpInputError,
+                  digit ? styles.otpInputFilled : undefined,
+                  error ? styles.otpInputError : undefined,
                 ]}
                 value={digit}
                 onChangeText={(value) => handleOtpChange(value, index)}

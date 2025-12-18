@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { COLORS, SPACING, FONT_SIZES } from '@/config/constants';
 
 interface ProgressBarProps {
@@ -66,9 +66,6 @@ export function CircularProgress({
   children,
 }: CircularProgressProps) {
   const clampedProgress = Math.min(Math.max(progress, 0), 100);
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (clampedProgress / 100) * circumference;
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>

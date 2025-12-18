@@ -377,6 +377,46 @@ export class NotificationService {
   }
 
   /**
+   * Send KYC approved notification
+   */
+  async sendKycApproved(
+    userId: string,
+    phone: string,
+    name: string,
+  ): Promise<SendNotificationResult> {
+    return this.send({
+      userId,
+      phone,
+      type: NotificationType.KYC_APPROVED,
+      priority: NotificationPriority.HIGH,
+      variables: {
+        name: name || 'Customer',
+      },
+    });
+  }
+
+  /**
+   * Send KYC rejected notification
+   */
+  async sendKycRejected(
+    userId: string,
+    phone: string,
+    name: string,
+    rejectionReason?: string,
+  ): Promise<SendNotificationResult> {
+    return this.send({
+      userId,
+      phone,
+      type: NotificationType.KYC_REJECTED,
+      priority: NotificationPriority.HIGH,
+      variables: {
+        name: name || 'Customer',
+        reason: rejectionReason || 'Document quality issues',
+      },
+    });
+  }
+
+  /**
    * Process pending scheduled notifications
    */
   async processScheduledNotifications(): Promise<number> {

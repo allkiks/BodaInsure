@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
+  StyleProp,
   ViewStyle,
   TextStyle,
 } from 'react-native';
@@ -16,8 +17,8 @@ interface ButtonProps {
   size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
   loading?: boolean;
-  style?: ViewStyle;
-  textStyle?: TextStyle;
+  style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
   icon?: React.ReactNode;
 }
 
@@ -32,19 +33,38 @@ export function Button({
   textStyle,
   icon,
 }: ButtonProps) {
-  const buttonStyles = [
+  const sizeStyles = {
+    sm: styles.size_sm,
+    md: styles.size_md,
+    lg: styles.size_lg,
+  };
+
+  const textVariantStyles = {
+    primary: styles.text_primary,
+    secondary: styles.text_secondary,
+    outline: styles.text_outline,
+    ghost: styles.text_ghost,
+  };
+
+  const textSizeStyles = {
+    sm: styles.textSize_sm,
+    md: styles.textSize_md,
+    lg: styles.textSize_lg,
+  };
+
+  const buttonStyles: StyleProp<ViewStyle> = [
     styles.button,
     styles[variant],
-    styles[`size_${size}`],
-    disabled && styles.disabled,
+    sizeStyles[size],
+    disabled ? styles.disabled : undefined,
     style,
   ];
 
-  const textStyles = [
+  const textStyles: StyleProp<TextStyle> = [
     styles.text,
-    styles[`text_${variant}`],
-    styles[`textSize_${size}`],
-    disabled && styles.textDisabled,
+    textVariantStyles[variant],
+    textSizeStyles[size],
+    disabled ? styles.textDisabled : undefined,
     textStyle,
   ];
 

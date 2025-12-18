@@ -261,4 +261,178 @@ export class UserService {
 
     this.logger.log(`User soft deleted: ***${user.phone.slice(-4)}`);
   }
+
+  /**
+   * Grace period for account deletion (30 days)
+   * Per Data Protection Act 2019 and CLAUDE.md Section 6.3
+   */
+  private readonly DELETION_GRACE_PERIOD_DAYS = 30;
+
+  /**
+   * Schedule account deletion with grace period
+   * Per Data Protection Act 2019: Right to Deletion
+   */
+  async scheduleDeletion(
+    userId: string,
+    reason?: string,
+  ): Promise<{
+    success: boolean;
+    deletionScheduledFor: Date;
+    message: string;
+  }> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Check if already scheduled
+    if (user.deletionScheduledFor) {
+      return {
+        success: false,
+        deletionScheduledFor: user.deletionScheduledFor,
+        message: 'Account deletion is already scheduled.',
+      };
+    }
+
+    // Schedule deletion for 30 days from now
+    const deletionDate = new Date();
+    deletionDate.setDate(deletionDate.getDate() + this.DELETION_GRACE_PERIOD_DAYS);
+
+    user.deletionScheduledFor = deletionDate;
+    user.deletionReason = reason ?? 'User requested deletion';
+    user.status = UserStatus.DEACTIVATED;
+
+    await this.userRepository.save(user);
+
+    this.logger.log(
+      `Account deletion scheduled: ***${user.phone.slice(-4)} scheduled for ${deletionDate.toISOString()}`,
+    );
+
+    return {
+      success: true,
+      deletionScheduledFor: deletionDate,
+      message: `Your account deletion has been scheduled for ${deletionDate.toLocaleDateString()}. You can cancel this request by contacting support within the grace period.`,
+    };
+  }
+
+  /**
+   * Cancel scheduled deletion
+   * User can cancel within the grace period by logging in or contacting support
+   */
+  async cancelDeletion(userId: string): Promise<{
+    success: boolean;
+    message: string;
+  }> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!user.deletionScheduledFor) {
+      return {
+        success: false,
+        message: 'No deletion is scheduled for this account.',
+      };
+    }
+
+    // Check if grace period has expired
+    if (user.deletionScheduledFor < new Date()) {
+      return {
+        success: false,
+        message: 'The grace period has expired. Account cannot be restored.',
+      };
+    }
+
+    // Cancel the deletion
+    user.deletionScheduledFor = undefined;
+    user.deletionReason = undefined;
+    user.status = UserStatus.ACTIVE;
+
+    await this.userRepository.save(user);
+
+    this.logger.log(`Account deletion cancelled: ***${user.phone.slice(-4)}`);
+
+    return {
+      success: true,
+      message: 'Your account deletion request has been cancelled. Your account is now active.',
+    };
+  }
+
+  /**
+   * Get deletion status for a user
+   */
+  async getDeletionStatus(userId: string): Promise<{
+    isScheduled: boolean;
+    deletionScheduledFor?: Date;
+    daysRemaining?: number;
+    reason?: string;
+  }> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user || !user.deletionScheduledFor) {
+      return { isScheduled: false };
+    }
+
+    const now = new Date();
+    const daysRemaining = Math.ceil(
+      (user.deletionScheduledFor.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
+    return {
+      isScheduled: true,
+      deletionScheduledFor: user.deletionScheduledFor,
+      daysRemaining: Math.max(0, daysRemaining),
+      reason: user.deletionReason,
+    };
+  }
+
+  /**
+   * Process scheduled deletions (called by scheduler)
+   * Permanently deletes accounts whose grace period has expired
+   */
+  async processScheduledDeletions(): Promise<number> {
+    const now = new Date();
+
+    // Find users with expired grace period
+    const usersToDelete = await this.userRepository.find({
+      where: {
+        deletionScheduledFor: now,
+        status: UserStatus.DEACTIVATED,
+      },
+    });
+
+    // Filter to only those past their deletion date
+    const expiredUsers = usersToDelete.filter(
+      user => user.deletionScheduledFor && user.deletionScheduledFor <= now,
+    );
+
+    let deletedCount = 0;
+
+    for (const user of expiredUsers) {
+      try {
+        await this.userRepository.softDelete(user.id);
+        deletedCount++;
+        this.logger.log(`Account permanently deleted: ***${user.phone.slice(-4)}`);
+      } catch (error) {
+        this.logger.error(
+          `Failed to delete account: ***${user.phone.slice(-4)}`,
+          error,
+        );
+      }
+    }
+
+    if (deletedCount > 0) {
+      this.logger.log(`Processed ${deletedCount} scheduled account deletions`);
+    }
+
+    return deletedCount;
+  }
 }

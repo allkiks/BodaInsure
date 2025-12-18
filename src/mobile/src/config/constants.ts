@@ -52,6 +52,7 @@ export const API_ENDPOINTS = {
   // User
   USER_PROFILE: '/users/me',
   USER_UPDATE: '/users/me',
+  USER_PREFERENCES: '/users/me/preferences',
 
   // KYC
   KYC_UPLOAD: '/kyc/documents',
@@ -69,6 +70,8 @@ export const API_ENDPOINTS = {
   // Policies
   POLICIES: '/policies',
   POLICY_ACTIVE: '/policies/active',
+  POLICY_DOCUMENT: '/policies/:policyId/document',
+  POLICY_CANCEL: '/policies/:policyId/cancel',
 } as const;
 
 // Colors (matching brand)

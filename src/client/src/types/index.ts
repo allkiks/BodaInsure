@@ -141,10 +141,14 @@ export interface EnrollmentMetrics {
   registered: number;
   kycComplete: number;
   depositPaid: number;
-  trend: TrendData[];
+  newToday?: number;
+  newThisWeek?: number;
+  newThisMonth?: number;
+  trend?: TrendData[];
 }
 
 export interface PaymentMetrics {
+  // Fields expected by PaymentDashboard component
   todayRevenue: number;
   todayTransactions: number;
   successRate: number;
@@ -152,14 +156,29 @@ export interface PaymentMetrics {
   dailyPayments: number;
   complianceRate: number;
   atRiskUsers: number;
+  // Additional fields from server
+  totalTransactions: number;
+  totalAmount: number;
+  averagePaymentAmount: number;
+  failedTransactions: number;
+  pendingTransactions: number;
 }
 
 export interface PolicyMetrics {
+  // Fields expected by PolicyDashboard component
   activePolicies: number;
   expiringIn30Days: number;
   lapsedPolicies: number;
   initialPolicies: number;
   extendedPolicies: number;
+  // Additional fields from server
+  totalPolicies: number;
+  expiringThisWeek: number;
+  expiringThisMonth: number;
+  issuedToday: number;
+  issuedThisWeek: number;
+  issuedThisMonth: number;
+  averageDaysToCompletion: number;
 }
 
 export interface TrendData {

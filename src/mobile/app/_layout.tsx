@@ -21,7 +21,7 @@ const queryClient = new QueryClient({
 });
 
 function RootLayoutNav() {
-  const { checkSession, isLoading, isAuthenticated } = useAuthStore();
+  const { checkSession, isLoading } = useAuthStore();
 
   // Initialize push notifications when authenticated
   useNotifications();

@@ -1,15 +1,95 @@
-import { View, Text, StyleSheet, ScrollView, Alert, Linking } from 'react-native';
+import { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, Linking, Modal, TextInput, TouchableOpacity, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, Button, Badge } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
+import { userApi } from '@/services/api/user.api';
 import { COLORS, SPACING, FONT_SIZES } from '@/config/constants';
 
 export default function ProfileScreen() {
   const { t, i18n } = useTranslation();
-  const { user, logout, updateLanguage } = useAuthStore();
+  const { user, logout, updateLanguage, updateUser } = useAuthStore();
+  const queryClient = useQueryClient();
+
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [editForm, setEditForm] = useState({
+    fullName: user?.fullName || '',
+    email: user?.email || '',
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: { fullName?: string; email?: string }) =>
+      userApi.updateProfile(data),
+    onSuccess: (updatedUser) => {
+      updateUser(updatedUser);
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      setIsEditModalVisible(false);
+      Alert.alert(t('common.done'), t('profile.saved'));
+    },
+    onError: () => {
+      Alert.alert(t('common.error'), t('errors.unknown'));
+    },
+  });
+
+  const handleEditProfile = () => {
+    setEditForm({
+      fullName: user?.fullName || '',
+      email: user?.email || '',
+    });
+    setIsEditModalVisible(true);
+  };
+
+  const handleSaveProfile = () => {
+    const updates: { fullName?: string; email?: string } = {};
+    if (editForm.fullName.trim()) {
+      updates.fullName = editForm.fullName.trim();
+    }
+    if (editForm.email.trim()) {
+      updates.email = editForm.email.trim();
+    }
+    updateProfileMutation.mutate(updates);
+  };
+
+  const updatePreferencesMutation = useMutation({
+    mutationFn: (data: { reminderOptOut?: boolean; language?: string }) =>
+      userApi.updatePreferences(data),
+    onSuccess: (_, variables) => {
+      if (variables.reminderOptOut !== undefined) {
+        updateUser({ reminderOptOut: variables.reminderOptOut });
+      }
+    },
+    onError: () => {
+      Alert.alert(t('common.error'), t('errors.unknown'));
+    },
+  });
+
+  const requestDeletionMutation = useMutation({
+    mutationFn: (reason?: string) => userApi.requestDeletion(reason),
+    onSuccess: (response) => {
+      setIsDeleteModalVisible(false);
+      setDeleteReason('');
+      Alert.alert(
+        t('profile.deleteAccount'),
+        t('profile.deleteScheduled', {
+          date: new Date(response.deletionScheduledFor).toLocaleDateString(),
+        }),
+        [{ text: t('common.ok') }]
+      );
+    },
+    onError: () => {
+      Alert.alert(t('common.error'), t('profile.deleteError'));
+    },
+  });
+
+  const handleToggleReminders = (value: boolean) => {
+    updatePreferencesMutation.mutate({ reminderOptOut: !value });
+  };
 
   const handleLogout = () => {
     Alert.alert(t('auth.logout'), t('auth.logoutConfirm'), [
@@ -38,6 +118,14 @@ export default function ProfileScreen() {
     Linking.openURL('https://wa.me/254700000000');
   };
 
+  const handleDeleteAccount = () => {
+    setIsDeleteModalVisible(true);
+  };
+
+  const handleConfirmDelete = () => {
+    requestDeletionMutation.mutate(deleteReason.trim() || undefined);
+  };
+
   const formatPhone = (phone: string) => {
     if (!phone) return '';
     return phone.replace(/(\+\d{3})(\d{3})(\d{3})(\d{3})/, '$1 $2 $3 $4');
@@ -57,15 +145,16 @@ export default function ProfileScreen() {
 
         {/* Profile Card */}
         <Card style={styles.profileCard}>
+          <TouchableOpacity style={styles.editButton} onPress={handleEditProfile}>
+            <Ionicons name="pencil" size={18} color={COLORS.primary} />
+          </TouchableOpacity>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {user?.firstName?.[0]?.toUpperCase() || user?.phone?.[1] || 'U'}
+              {user?.fullName?.[0]?.toUpperCase() || user?.phone?.[1] || 'U'}
             </Text>
           </View>
           <Text style={styles.name}>
-            {user?.firstName && user?.lastName
-              ? `${user.firstName} ${user.lastName}`
-              : 'BodaInsure User'}
+            {user?.fullName || 'BodaInsure User'}
           </Text>
           <Text style={styles.phone}>{formatPhone(user?.phone || '')}</Text>
           <Badge
@@ -80,13 +169,8 @@ export default function ProfileScreen() {
           <Card variant="outlined">
             <ProfileItem
               icon="person-outline"
-              label={t('profile.firstName')}
-              value={user?.firstName || '-'}
-            />
-            <ProfileItem
-              icon="person-outline"
-              label={t('profile.lastName')}
-              value={user?.lastName || '-'}
+              label={t('profile.fullName')}
+              value={user?.fullName || '-'}
             />
             <ProfileItem
               icon="call-outline"
@@ -123,6 +207,31 @@ export default function ProfileScreen() {
           </Card>
         </View>
 
+        {/* Notification Preferences */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('profile.notifications')}</Text>
+          <Card variant="outlined">
+            <View style={styles.preferenceItem}>
+              <View style={styles.preferenceInfo}>
+                <View style={styles.preferenceIcon}>
+                  <Ionicons name="notifications-outline" size={20} color={COLORS.primary} />
+                </View>
+                <View style={styles.preferenceText}>
+                  <Text style={styles.preferenceLabel}>{t('profile.paymentReminders')}</Text>
+                  <Text style={styles.preferenceDesc}>{t('profile.paymentRemindersDesc')}</Text>
+                </View>
+              </View>
+              <Switch
+                value={!user?.reminderOptOut}
+                onValueChange={handleToggleReminders}
+                trackColor={{ false: COLORS.border, true: `${COLORS.primary}50` }}
+                thumbColor={!user?.reminderOptOut ? COLORS.primary : COLORS.textLight}
+                disabled={updatePreferencesMutation.isPending}
+              />
+            </View>
+          </Card>
+        </View>
+
         {/* Support */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('profile.support')}</Text>
@@ -141,6 +250,26 @@ export default function ProfileScreen() {
           </Card>
         </View>
 
+        {/* Account Management */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('profile.accountManagement')}</Text>
+          <Card variant="outlined">
+            <TouchableOpacity
+              style={styles.deleteAccountItem}
+              onPress={handleDeleteAccount}
+            >
+              <View style={styles.deleteAccountIcon}>
+                <Ionicons name="trash-outline" size={20} color={COLORS.error} />
+              </View>
+              <View style={styles.deleteAccountText}>
+                <Text style={styles.deleteAccountLabel}>{t('profile.deleteAccount')}</Text>
+                <Text style={styles.deleteAccountDesc}>{t('profile.deleteAccountDesc')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.textLight} />
+            </TouchableOpacity>
+          </Card>
+        </View>
+
         {/* Logout */}
         <Button
           title={t('auth.logout')}
@@ -155,6 +284,139 @@ export default function ProfileScreen() {
         {/* Version */}
         <Text style={styles.version}>BodaInsure v1.0.0</Text>
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={isEditModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('profile.editProfile')}</Text>
+              <TouchableOpacity
+                onPress={() => setIsEditModalVisible(false)}
+                style={styles.modalClose}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>{t('profile.fullName')}</Text>
+              <TextInput
+                style={styles.formInput}
+                value={editForm.fullName}
+                onChangeText={(text) =>
+                  setEditForm((prev) => ({ ...prev, fullName: text }))
+                }
+                placeholder={t('profile.fullNamePlaceholder')}
+                placeholderTextColor={COLORS.textLight}
+                autoCapitalize="words"
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>{t('profile.email')}</Text>
+              <TextInput
+                style={styles.formInput}
+                value={editForm.email}
+                onChangeText={(text) =>
+                  setEditForm((prev) => ({ ...prev, email: text }))
+                }
+                placeholder={t('profile.emailPlaceholder')}
+                placeholderTextColor={COLORS.textLight}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <Button
+              title={
+                updateProfileMutation.isPending
+                  ? t('common.loading')
+                  : t('profile.saveChanges')
+              }
+              onPress={handleSaveProfile}
+              size="lg"
+              disabled={updateProfileMutation.isPending}
+              style={styles.saveButton}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account Modal */}
+      <Modal
+        visible={isDeleteModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('profile.deleteAccount')}</Text>
+              <TouchableOpacity
+                onPress={() => setIsDeleteModalVisible(false)}
+                style={styles.modalClose}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.deleteWarningBox}>
+              <Ionicons name="warning" size={24} color={COLORS.error} />
+              <Text style={styles.deleteWarningText}>
+                {t('profile.deleteWarning')}
+              </Text>
+            </View>
+
+            <View style={styles.deleteInfoBox}>
+              <Text style={styles.deleteInfoTitle}>{t('profile.deleteInfoTitle')}</Text>
+              <Text style={styles.deleteInfoItem}>• {t('profile.deleteInfo1')}</Text>
+              <Text style={styles.deleteInfoItem}>• {t('profile.deleteInfo2')}</Text>
+              <Text style={styles.deleteInfoItem}>• {t('profile.deleteInfo3')}</Text>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>{t('profile.deleteReasonLabel')}</Text>
+              <TextInput
+                style={[styles.formInput, styles.deleteReasonInput]}
+                value={deleteReason}
+                onChangeText={setDeleteReason}
+                placeholder={t('profile.deleteReasonPlaceholder')}
+                placeholderTextColor={COLORS.textLight}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <Button
+              title={
+                requestDeletionMutation.isPending
+                  ? t('common.loading')
+                  : t('profile.confirmDelete')
+              }
+              onPress={handleConfirmDelete}
+              size="lg"
+              disabled={requestDeletionMutation.isPending}
+              style={styles.deleteButton}
+              textStyle={styles.deleteButtonText}
+            />
+
+            <TouchableOpacity
+              onPress={() => setIsDeleteModalVisible(false)}
+              style={styles.cancelDeleteButton}
+            >
+              <Text style={styles.cancelDeleteText}>{t('common.cancel')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -258,6 +520,18 @@ const styles = StyleSheet.create({
   profileCard: {
     alignItems: 'center',
     marginBottom: SPACING.lg,
+    position: 'relative',
+  },
+  editButton: {
+    position: 'absolute',
+    top: SPACING.sm,
+    right: SPACING.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: `${COLORS.primary}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatar: {
     width: 80,
@@ -329,6 +603,39 @@ const styles = StyleSheet.create({
   languageCard: {
     padding: SPACING.sm,
   },
+  preferenceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.md,
+  },
+  preferenceInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: SPACING.md,
+  },
+  preferenceIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: `${COLORS.primary}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preferenceText: {
+    flex: 1,
+  },
+  preferenceLabel: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '500',
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  preferenceDesc: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textLight,
+  },
   languageOptions: {
     flexDirection: 'row',
     gap: SPACING.sm,
@@ -389,5 +696,140 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: COLORS.textLight,
     marginTop: SPACING.lg,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: SPACING.lg,
+    paddingBottom: SPACING.xl * 2,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.lg,
+  },
+  modalTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  modalClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  formGroup: {
+    marginBottom: SPACING.lg,
+  },
+  formLabel: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  formInput: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text,
+  },
+  saveButton: {
+    marginTop: SPACING.md,
+  },
+  // Delete Account styles
+  deleteAccountItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    gap: SPACING.md,
+  },
+  deleteAccountIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: `${COLORS.error}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteAccountText: {
+    flex: 1,
+  },
+  deleteAccountLabel: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '500',
+    color: COLORS.error,
+    marginBottom: 2,
+  },
+  deleteAccountDesc: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textLight,
+  },
+  deleteWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: `${COLORS.error}10`,
+    padding: SPACING.md,
+    borderRadius: 12,
+    marginBottom: SPACING.md,
+    gap: SPACING.sm,
+  },
+  deleteWarningText: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.error,
+    lineHeight: 20,
+  },
+  deleteInfoBox: {
+    backgroundColor: COLORS.surface,
+    padding: SPACING.md,
+    borderRadius: 12,
+    marginBottom: SPACING.lg,
+  },
+  deleteInfoTitle: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: SPACING.sm,
+  },
+  deleteInfoItem: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textLight,
+    lineHeight: 22,
+  },
+  deleteReasonInput: {
+    minHeight: 80,
+    paddingTop: SPACING.md,
+  },
+  deleteButton: {
+    backgroundColor: COLORS.error,
+    marginTop: SPACING.md,
+  },
+  deleteButtonText: {
+    color: '#fff',
+  },
+  cancelDeleteButton: {
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  cancelDeleteText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.textLight,
+    fontWeight: '500',
   },
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -29,7 +29,6 @@ export default function PaymentScreen() {
   const [step, setStep] = useState<PaymentStep>('select');
   const [selectedOption, setSelectedOption] = useState<PaymentOption | null>(null);
   const [selectedDays, setSelectedDays] = useState(1);
-  const [checkoutRequestId, setCheckoutRequestId] = useState<string | null>(null);
 
   const { data: wallet } = useQuery({
     queryKey: ['wallet'],
@@ -43,9 +42,8 @@ export default function PaymentScreen() {
 
   const paymentMutation = useMutation({
     mutationFn: (data: { type: PaymentType; amount: number; days?: number }) =>
-      paymentApi.initiatePayment(data.type, data.amount, data.days),
+      paymentApi.initiatePayment({ type: data.type, amount: data.amount, days: data.days }),
     onSuccess: (response) => {
-      setCheckoutRequestId(response.checkoutRequestId);
       setStep('processing');
       startPolling(response.checkoutRequestId);
     },
@@ -154,7 +152,6 @@ export default function PaymentScreen() {
   const handleRetry = () => {
     setStep('select');
     setSelectedOption(null);
-    setCheckoutRequestId(null);
   };
 
   const handleDone = () => {

@@ -16,6 +16,7 @@ interface AuthActions {
   setLoading: (loading: boolean) => void;
   checkSession: () => Promise<boolean>;
   updateLanguage: (language: Language) => void;
+  updateUser: (updatedUser: Partial<User>) => Promise<void>;
 }
 
 type AuthStore = AuthState & AuthActions;
@@ -114,6 +115,16 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set({ user: { ...user, language } });
       // Persist user update
       SecureStore.setItemAsync(USER_KEY, JSON.stringify({ ...user, language }));
+    }
+  },
+
+  updateUser: async (updatedUser) => {
+    const { user } = get();
+    if (user) {
+      const newUser = { ...user, ...updatedUser };
+      set({ user: newUser });
+      // Persist user update
+      await SecureStore.setItemAsync(USER_KEY, JSON.stringify(newUser));
     }
   },
 }));

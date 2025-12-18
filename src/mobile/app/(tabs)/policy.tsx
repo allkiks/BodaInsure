@@ -1,23 +1,201 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Linking, Modal, TextInput, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { Card, Button, Badge } from '@/components/ui';
 import { userApi } from '@/services/api/user.api';
 import { COLORS, SPACING, FONT_SIZES } from '@/config/constants';
 import type { Policy } from '@/types';
 
+// 30-day free-look period
+const FREE_LOOK_DAYS = 30;
+
 export default function PolicyScreen() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [policyToCancel, setPolicyToCancel] = useState<Policy | null>(null);
 
   const { data: policies, isLoading, refetch } = useQuery({
     queryKey: ['policies'],
     queryFn: userApi.getPolicies,
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: ({ policyId, reason }: { policyId: string; reason: string }) =>
+      userApi.cancelPolicy(policyId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] });
+      setShowCancelModal(false);
+      setCancelReason('');
+      setPolicyToCancel(null);
+      Alert.alert(
+        t('common.done'),
+        t('policy.cancelSuccess')
+      );
+    },
+    onError: () => {
+      Alert.alert(t('common.error'), t('policy.cancelError'));
+    },
+  });
+
   const activePolicy = policies?.find((p) => p.status === 'active');
+
+  /**
+   * Check if policy is within free-look period
+   */
+  const isWithinFreeLookPeriod = (policy: Policy) => {
+    const startDate = new Date(policy.startDate);
+    const now = new Date();
+    const daysSinceStart = Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    return daysSinceStart <= FREE_LOOK_DAYS && policy.status === 'active';
+  };
+
+  const getDaysInFreeLookPeriod = (policy: Policy) => {
+    const startDate = new Date(policy.startDate);
+    const now = new Date();
+    const daysSinceStart = Math.floor((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    return FREE_LOOK_DAYS - daysSinceStart;
+  };
+
+  const handleCancelPress = (policy: Policy) => {
+    setPolicyToCancel(policy);
+    setShowCancelModal(true);
+  };
+
+  const handleConfirmCancel = () => {
+    if (!policyToCancel || !cancelReason.trim()) {
+      Alert.alert(t('common.error'), t('policy.cancelReasonRequired'));
+      return;
+    }
+    cancelMutation.mutate({ policyId: policyToCancel.id, reason: cancelReason.trim() });
+  };
+
+  /**
+   * Download policy certificate PDF
+   */
+  const handleDownload = async (policyId: string, policyNumber: string) => {
+    setIsDownloading(true);
+    try {
+      // Get the download URL from the API
+      const result = await userApi.getPolicyDocument(policyId);
+
+      if (!result.downloadUrl) {
+        Alert.alert(
+          t('common.info'),
+          result.message || t('policy.documentNotReady')
+        );
+        return;
+      }
+
+      // Download the file
+      const filename = `BodaInsure_Policy_${policyNumber}.pdf`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+      const downloadResult = await FileSystem.downloadAsync(
+        result.downloadUrl,
+        fileUri
+      );
+
+      if (downloadResult.status === 200) {
+        // Check if sharing is available and share/save the file
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(downloadResult.uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: t('policy.downloadCertificate'),
+          });
+        } else {
+          Alert.alert(
+            t('common.success'),
+            t('policy.downloadSuccess', { filename })
+          );
+        }
+      } else {
+        throw new Error('Download failed');
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      Alert.alert(
+        t('common.error'),
+        t('policy.downloadError')
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  /**
+   * Share policy via WhatsApp
+   */
+  const handleShareWhatsApp = async (policyId: string, policyNumber: string) => {
+    setIsSharing(true);
+    try {
+      // Get the download URL from the API
+      const result = await userApi.getPolicyDocument(policyId);
+
+      if (!result.downloadUrl) {
+        Alert.alert(
+          t('common.info'),
+          result.message || t('policy.documentNotReady')
+        );
+        return;
+      }
+
+      // Download the file first
+      const filename = `BodaInsure_Policy_${policyNumber}.pdf`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+      const downloadResult = await FileSystem.downloadAsync(
+        result.downloadUrl,
+        fileUri
+      );
+
+      if (downloadResult.status === 200) {
+        // Check if sharing is available
+        if (await Sharing.isAvailableAsync()) {
+          // Share the file - this will open the share sheet where user can select WhatsApp
+          await Sharing.shareAsync(downloadResult.uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: t('policy.shareWhatsApp'),
+          });
+        } else {
+          // Fallback: Open WhatsApp with a message (without attachment)
+          const message = encodeURIComponent(
+            t('policy.shareMessage', { policyNumber })
+          );
+          const whatsappUrl = `whatsapp://send?text=${message}`;
+
+          const canOpen = await Linking.canOpenURL(whatsappUrl);
+          if (canOpen) {
+            await Linking.openURL(whatsappUrl);
+          } else {
+            Alert.alert(
+              t('common.error'),
+              t('policy.whatsappNotInstalled')
+            );
+          }
+        }
+      } else {
+        throw new Error('Download failed');
+      }
+    } catch (error) {
+      console.error('Share error:', error);
+      Alert.alert(
+        t('common.error'),
+        t('policy.shareError')
+      );
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -102,21 +280,43 @@ export default function PolicyScreen() {
               <View style={styles.policyActions}>
                 <Button
                   title={t('policy.downloadCertificate')}
-                  onPress={() => {}}
+                  onPress={() => handleDownload(activePolicy.id, activePolicy.policyNumber)}
                   variant="outline"
                   size="md"
                   icon={<Ionicons name="download-outline" size={20} color={COLORS.primary} />}
                   style={styles.actionButton}
+                  loading={isDownloading}
+                  disabled={isDownloading || isSharing}
                 />
                 <Button
                   title={t('policy.shareWhatsApp')}
-                  onPress={() => {}}
+                  onPress={() => handleShareWhatsApp(activePolicy.id, activePolicy.policyNumber)}
                   variant="secondary"
                   size="md"
                   icon={<Ionicons name="logo-whatsapp" size={20} color={COLORS.text} />}
                   style={styles.actionButton}
+                  loading={isSharing}
+                  disabled={isDownloading || isSharing}
                 />
               </View>
+
+              {/* Free Look Period Cancel Option */}
+              {isWithinFreeLookPeriod(activePolicy) && (
+                <View style={styles.freeLookSection}>
+                  <View style={styles.freeLookInfo}>
+                    <Ionicons name="information-circle-outline" size={18} color="rgba(255,255,255,0.8)" />
+                    <Text style={styles.freeLookText}>
+                      {t('policy.freeLookRemaining', { days: getDaysInFreeLookPeriod(activePolicy) })}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.cancelLink}
+                    onPress={() => handleCancelPress(activePolicy)}
+                  >
+                    <Text style={styles.cancelLinkText}>{t('policy.cancelPolicy')}</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </Card>
 
             {/* All Policies */}
@@ -170,6 +370,65 @@ export default function PolicyScreen() {
           </View>
         </Card>
       </ScrollView>
+
+      {/* Cancel Policy Modal */}
+      <Modal
+        visible={showCancelModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowCancelModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('policy.cancelPolicy')}</Text>
+              <TouchableOpacity
+                onPress={() => setShowCancelModal(false)}
+                style={styles.modalClose}
+              >
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.warningBox}>
+              <Ionicons name="warning" size={24} color={COLORS.warning} />
+              <Text style={styles.warningText}>
+                {t('policy.cancelWarning')}
+              </Text>
+            </View>
+
+            <Text style={styles.modalLabel}>{t('policy.cancelReasonLabel')}</Text>
+            <TextInput
+              style={styles.reasonInput}
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              placeholder={t('policy.cancelReasonPlaceholder')}
+              placeholderTextColor={COLORS.textLight}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+
+            <View style={styles.modalActions}>
+              <Button
+                title={t('common.cancel')}
+                onPress={() => setShowCancelModal(false)}
+                variant="outline"
+                size="lg"
+                style={styles.modalButton}
+              />
+              <Button
+                title={cancelMutation.isPending ? t('common.loading') : t('policy.confirmCancel')}
+                onPress={handleConfirmCancel}
+                size="lg"
+                style={[styles.modalButton, styles.cancelButton]}
+                textStyle={{ color: '#fff' }}
+                disabled={cancelMutation.isPending || !cancelReason.trim()}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -325,6 +584,34 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.9)',
     borderColor: 'transparent',
   },
+  freeLookSection: {
+    marginTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+    paddingTop: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  freeLookInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    flex: 1,
+  },
+  freeLookText: {
+    fontSize: FONT_SIZES.sm,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  cancelLink: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  cancelLinkText: {
+    fontSize: FONT_SIZES.sm,
+    color: 'rgba(255,255,255,0.8)',
+    textDecorationLine: 'underline',
+  },
   allPolicies: {
     marginBottom: SPACING.lg,
   },
@@ -427,5 +714,80 @@ const styles = StyleSheet.create({
   infoStepDesc: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.textLight,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: SPACING.lg,
+    paddingBottom: SPACING.xl * 2,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.lg,
+  },
+  modalTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  modalClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  warningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    backgroundColor: '#fef3c7',
+    padding: SPACING.md,
+    borderRadius: 12,
+    marginBottom: SPACING.lg,
+  },
+  warningText: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text,
+  },
+  modalLabel: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  reasonInput: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text,
+    minHeight: 100,
+    marginBottom: SPACING.lg,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+  },
+  modalButton: {
+    flex: 1,
+  },
+  cancelButton: {
+    backgroundColor: COLORS.error,
+    borderColor: COLORS.error,
   },
 });

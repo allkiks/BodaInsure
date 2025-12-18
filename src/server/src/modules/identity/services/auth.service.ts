@@ -15,7 +15,7 @@ import { OtpService } from './otp.service.js';
 import { SessionService } from './session.service.js';
 import { OtpPurpose } from '../entities/otp.entity.js';
 import { DeviceType } from '../entities/session.entity.js';
-import { UserStatus, UserRole, Language } from '../entities/user.entity.js';
+import { UserStatus, Language } from '../entities/user.entity.js';
 import { normalizePhoneToE164 } from '../../../common/utils/phone.util.js';
 import { SmsService } from '../../notification/services/sms.service.js';
 import {
@@ -315,9 +315,13 @@ export class AuthService {
   }
 
   /**
-   * Admin login with username/password
-   * This flow is specifically for admin accounts (PLATFORM_ADMIN, INSURANCE_ADMIN, KBA_ADMIN, SACCO_ADMIN)
-   * Coexists with the phone/OTP flow for regular users
+   * Login with username/password
+   * This flow allows any user with a password to authenticate.
+   * The username can be either:
+   * - A traditional username (e.g., 'SUPERUSER')
+   * - A phone number (which serves as the username for most users)
+   *
+   * Coexists with the phone/OTP flow for users who prefer that method.
    */
   async adminLogin(
     dto: AdminLoginDto,
@@ -325,34 +329,30 @@ export class AuthService {
     ipAddress?: string,
     userAgent?: string,
   ): Promise<AdminLoginResponseDto> {
-    // Find user by username
-    const user = await this.userService.findByUsername(dto.username);
+    // Find user by username first, then fall back to phone number
+    let user = await this.userService.findByUsername(dto.username);
+
+    // If not found by username, try phone number (username may be phone)
     if (!user) {
-      this.logger.warn(`Admin login failed: username not found - ${dto.username}`);
+      try {
+        const normalizedPhone = normalizePhoneToE164(dto.username);
+        user = await this.userService.findByPhone(normalizedPhone);
+      } catch {
+        // Phone normalization failed, continue with null user
+      }
+    }
+
+    if (!user) {
+      this.logger.warn(`Password login failed: user not found - ${dto.username}`);
       return {
         status: 'INVALID_CREDENTIALS',
         message: 'Invalid username or password',
       };
     }
 
-    // Verify this is an admin account (has password hash)
+    // Verify user has a password set
     if (!user.passwordHash) {
-      this.logger.warn(`Admin login failed: user has no password - ${dto.username}`);
-      return {
-        status: 'INVALID_CREDENTIALS',
-        message: 'Invalid username or password',
-      };
-    }
-
-    // Verify the user has an admin role
-    const adminRoles = [
-      UserRole.PLATFORM_ADMIN,
-      UserRole.INSURANCE_ADMIN,
-      UserRole.KBA_ADMIN,
-      UserRole.SACCO_ADMIN,
-    ];
-    if (!adminRoles.includes(user.role as UserRole)) {
-      this.logger.warn(`Admin login failed: user is not admin - ${dto.username}`);
+      this.logger.warn(`Password login failed: user has no password - ${dto.username}`);
       return {
         status: 'INVALID_CREDENTIALS',
         message: 'Invalid username or password',
@@ -435,7 +435,7 @@ export class AuthService {
     const accessToken = this.jwtService.sign(payload);
     const expiresIn = this.getExpiresInSeconds();
 
-    this.logger.log(`Admin login successful: ${dto.username}`);
+    this.logger.log(`Password login successful: ${dto.username}`);
 
     return {
       status: 'SUCCESS',
@@ -445,7 +445,8 @@ export class AuthService {
       expiresIn,
       user: {
         id: user.id,
-        username: user.username!,
+        username: user.username ?? user.phone,
+        phone: user.phone,
         role: user.role,
         status: user.status,
       },

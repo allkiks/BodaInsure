@@ -2,15 +2,28 @@ import {
   Controller,
   Get,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { DashboardService } from '../services/dashboard.service.js';
 import { DashboardQueryDto } from '../dto/report.dto.js';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../../../common/guards/roles.guard.js';
+import { Roles } from '../../../common/decorators/roles.decorator.js';
+import { ROLES } from '../../../common/constants/index.js';
 
 /**
  * Dashboard Controller
  * Real-time metrics and dashboard data
+ *
+ * Security: Requires authentication and admin roles
+ * - PLATFORM_ADMIN: Full access to all dashboards
+ * - INSURANCE_ADMIN: Access for reporting and analytics
+ * - KBA_ADMIN: Access to KBA-level dashboards
+ * - SACCO_ADMIN: Access to SACCO-level dashboards
  */
 @Controller('dashboard')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(ROLES.PLATFORM_ADMIN, ROLES.INSURANCE_ADMIN, ROLES.KBA_ADMIN, ROLES.SACCO_ADMIN)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 

@@ -2,17 +2,25 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, MinLength, MaxLength } from 'class-validator';
 
 /**
- * Admin Login Request DTO
- * For username/password authentication (admin accounts only)
+ * Password Login Request DTO
+ * For username/password authentication
  *
- * This flow coexists with the phone/OTP flow:
- * - Regular riders use phone/OTP (login.dto.ts)
- * - Admins can use username/password (this DTO)
+ * This flow supports any user with a password set.
+ * Username can be:
+ * - A traditional username (e.g., 'SUPERUSER')
+ * - A phone number in local format (e.g., '0722000000')
+ * - A phone number in international format (e.g., '+254722000000')
+ *
+ * This flow coexists with the phone/OTP flow for users who prefer that method.
  */
 export class AdminLoginDto {
   @ApiProperty({
-    description: 'Admin username',
-    example: 'SUPERUSER',
+    description: 'Username or phone number',
+    examples: {
+      username: { value: 'SUPERUSER', summary: 'Traditional username' },
+      localPhone: { value: '0722000000', summary: 'Phone (local format)' },
+      e164Phone: { value: '+254722000000', summary: 'Phone (E.164 format)' },
+    },
   })
   @IsString()
   @MinLength(3, { message: 'Username must be at least 3 characters' })
@@ -20,7 +28,7 @@ export class AdminLoginDto {
   username!: string;
 
   @ApiProperty({
-    description: 'Admin password',
+    description: 'User password',
     example: 'ChangeMe123!',
   })
   @IsString()
@@ -30,7 +38,7 @@ export class AdminLoginDto {
 }
 
 /**
- * Admin Login Response DTO
+ * Password Login Response DTO
  */
 export class AdminLoginResponseDto {
   @ApiProperty({
@@ -70,6 +78,7 @@ export class AdminLoginResponseDto {
   user?: {
     id: string;
     username: string;
+    phone?: string;
     role: string;
     status: string;
   };

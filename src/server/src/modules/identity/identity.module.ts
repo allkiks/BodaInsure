@@ -20,6 +20,7 @@ import { SeederService } from './services/seeder.service.js';
 
 // Controllers
 import { AuthController } from './controllers/auth.controller.js';
+import { UserController } from './controllers/user.controller.js';
 
 // Strategies
 import { JwtStrategy } from './strategies/jwt.strategy.js';
@@ -79,7 +80,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, UserController],
   providers: [
     // Services
     AuthService,
