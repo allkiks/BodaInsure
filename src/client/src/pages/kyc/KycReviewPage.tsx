@@ -30,6 +30,14 @@ import { toast } from '@/hooks/use-toast';
 import { maskPhone, formatDateTime } from '@/lib/utils';
 
 const documentTypeLabels: Record<string, string> = {
+  // Server document types (uppercase)
+  ID_FRONT: 'National ID (Front)',
+  ID_BACK: 'National ID (Back)',
+  LICENSE: 'Driving License',
+  LOGBOOK: 'Vehicle Logbook',
+  KRA_PIN: 'KRA PIN Certificate',
+  PHOTO: 'Passport Photo',
+  // Legacy types (for backwards compatibility)
   national_id_front: 'National ID (Front)',
   national_id_back: 'National ID (Back)',
   driving_license: 'Driving License',
@@ -125,9 +133,9 @@ export default function KycReviewPage() {
             </h1>
             <div className="flex items-center gap-2 text-muted-foreground">
               <User className="h-4 w-4" />
-              {doc.user.firstName && doc.user.lastName
+              {doc.user?.firstName && doc.user?.lastName
                 ? `${doc.user.firstName} ${doc.user.lastName}`
-                : maskPhone(doc.user.phone)}
+                : maskPhone(doc.user?.phone || '')}
             </div>
           </div>
         </div>
@@ -210,11 +218,11 @@ export default function KycReviewPage() {
                 <Button
                   variant="link"
                   className="h-auto p-0"
-                  onClick={() => navigate(`/users/${doc.user.id}`)}
+                  onClick={() => doc.user?.id && navigate(`/users/${doc.user.id}`)}
                 >
-                  {doc.user.firstName && doc.user.lastName
+                  {doc.user?.firstName && doc.user?.lastName
                     ? `${doc.user.firstName} ${doc.user.lastName}`
-                    : maskPhone(doc.user.phone)}
+                    : maskPhone(doc.user?.phone || '')}
                 </Button>
               </div>
             </CardContent>

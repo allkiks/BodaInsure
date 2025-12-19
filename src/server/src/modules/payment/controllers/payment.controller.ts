@@ -265,7 +265,72 @@ export class PaymentController {
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class WalletController {
-  constructor(private readonly walletService: WalletService) {}
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly paymentService: PaymentService,
+  ) {}
+
+  /**
+   * Get wallet summary with balance and recent transactions
+   */
+  @Get()
+  @ApiOperation({
+    summary: 'Get wallet summary',
+    description: 'Get wallet balance, progress, and recent transactions',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Wallet summary retrieved',
+  })
+  async getWalletSummary(@CurrentUser() user: AuthenticatedUser): Promise<{
+    data: {
+      wallet: {
+        id: string;
+        userId: string;
+        balance: number;
+        totalDeposited: number;
+        totalDailyPayments: number;
+        daysCompleted: number;
+        createdAt: Date;
+        updatedAt: Date;
+      };
+      recentTransactions: Array<{
+        id: string;
+        type: string;
+        amount: number;
+        status: string;
+        createdAt: Date;
+      }>;
+    };
+  }> {
+    const wallet = await this.walletService.getOrCreateWallet(user.userId);
+    const { transactions } = await this.paymentService.getTransactionHistory(user.userId, {
+      page: 1,
+      limit: 5,
+    });
+
+    return {
+      data: {
+        wallet: {
+          id: wallet.id,
+          userId: wallet.userId,
+          balance: wallet.getBalanceInKes(),
+          totalDeposited: Number(wallet.totalDeposited) / 100,
+          totalDailyPayments: wallet.dailyPaymentsCount * 87,
+          daysCompleted: wallet.dailyPaymentsCount,
+          createdAt: wallet.createdAt,
+          updatedAt: wallet.updatedAt,
+        },
+        recentTransactions: transactions.map((txn) => ({
+          id: txn.id,
+          type: txn.type,
+          amount: txn.getAmountInKes(),
+          status: txn.status,
+          createdAt: txn.createdAt,
+        })),
+      },
+    };
+  }
 
   /**
    * Get wallet balance
@@ -307,6 +372,78 @@ export class WalletController {
   })
   async getProgress(@CurrentUser() user: AuthenticatedUser): Promise<PaymentProgressResponseDto> {
     return this.walletService.getPaymentProgress(user.userId);
+  }
+
+  /**
+   * Get wallet transaction history
+   */
+  @Get('transactions')
+  @ApiOperation({
+    summary: 'Get wallet transactions',
+    description: 'Get paginated list of wallet transactions',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'type', required: false, enum: ['DEPOSIT', 'DAILY_PAYMENT'] })
+  @ApiResponse({
+    status: 200,
+    description: 'Transactions retrieved',
+  })
+  async getTransactions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('type') type?: string,
+  ): Promise<{
+    data: Array<{
+      id: string;
+      type: string;
+      amount: number;
+      currency: string;
+      status: string;
+      mpesaReceiptNumber: string | null;
+      createdAt: Date;
+    }>;
+    meta: {
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    };
+  }> {
+    const pageNum = Math.max(1, parseInt(page ?? '1', 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit ?? '20', 10) || 20));
+
+    let transactionType: TransactionType | undefined;
+    if (type === 'DEPOSIT') {
+      transactionType = TransactionType.DEPOSIT;
+    } else if (type === 'DAILY_PAYMENT') {
+      transactionType = TransactionType.DAILY_PAYMENT;
+    }
+
+    const { transactions, total } = await this.paymentService.getTransactionHistory(user.userId, {
+      page: pageNum,
+      limit: limitNum,
+      type: transactionType,
+    });
+
+    return {
+      data: transactions.map((txn) => ({
+        id: txn.id,
+        type: txn.type,
+        amount: txn.getAmountInKes(),
+        currency: txn.currency,
+        status: txn.status,
+        mpesaReceiptNumber: txn.mpesaReceiptNumber ?? null,
+        createdAt: txn.createdAt,
+      })),
+      meta: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    };
   }
 }
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Building2, Search, Users, ChevronRight } from 'lucide-react';
+import { Building2, Search, Users, ChevronRight, Plus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,34 +15,47 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { organizationsApi } from '@/services/api/organizations.api';
-import type { Organization } from '@/types';
+import { useAuthStore } from '@/stores/authStore';
+import type { Organization, OrganizationType, OrganizationStatus } from '@/types';
 
-const typeLabels: Record<string, string> = {
-  umbrella: 'Umbrella Body',
-  sacco: 'SACCO',
-  association: 'Association',
+const typeLabels: Record<OrganizationType, string> = {
+  UMBRELLA_BODY: 'Umbrella Body',
+  SACCO: 'SACCO',
+  ASSOCIATION: 'Association',
+  STAGE: 'Stage',
 };
 
-const statusColors: Record<string, string> = {
-  active: 'bg-green-100 text-green-800',
-  inactive: 'bg-gray-100 text-gray-800',
-  pending: 'bg-yellow-100 text-yellow-800',
+const statusColors: Record<OrganizationStatus, string> = {
+  ACTIVE: 'bg-green-100 text-green-800',
+  INACTIVE: 'bg-gray-100 text-gray-800',
+  PENDING: 'bg-yellow-100 text-yellow-800',
+  SUSPENDED: 'bg-red-100 text-red-800',
 };
 
 export default function OrganizationListPage() {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
 
+  const isAdmin = user?.role === 'platform_admin' || user?.role === 'kba_admin';
+
   const { data, isLoading } = useQuery({
-    queryKey: ['organizations', searchQuery, typeFilter, page],
+    queryKey: ['organizations', searchQuery, typeFilter, statusFilter, page],
     queryFn: () =>
       organizationsApi.listOrganizations({
         query: searchQuery || undefined,
         type: typeFilter !== 'all' ? typeFilter : undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
         page,
       }),
+  });
+
+  const { data: stats } = useQuery({
+    queryKey: ['organization-stats'],
+    queryFn: () => organizationsApi.getOverviewStats(),
   });
 
   const handleOrganizationClick = (org: Organization) => {
@@ -51,12 +64,58 @@ export default function OrganizationListPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Organizations</h1>
-        <p className="text-muted-foreground">
-          Manage KBA, SACCOs, and associations
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Organizations</h1>
+          <p className="text-muted-foreground">
+            Manage KBA, SACCOs, and associations
+          </p>
+        </div>
+        {isAdmin && (
+          <Button onClick={() => navigate('/organizations/new')}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Organization
+          </Button>
+        )}
       </div>
+
+      {/* Stats Overview */}
+      {stats && (
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Total Organizations</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{stats.totalOrganizations}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Umbrella Bodies</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{stats.totalUmbrellaBodies}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">SACCOs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{stats.totalSaccos}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Active</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-green-600">{stats.activeOrganizations}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Filters */}
       <Card>
@@ -69,7 +128,7 @@ export default function OrganizationListPage() {
         <CardContent>
           <div className="flex flex-col gap-4 md:flex-row">
             <Input
-              placeholder="Search by name..."
+              placeholder="Search by name or code..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1"
@@ -80,9 +139,22 @@ export default function OrganizationListPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="umbrella">Umbrella Body</SelectItem>
-                <SelectItem value="sacco">SACCO</SelectItem>
-                <SelectItem value="association">Association</SelectItem>
+                <SelectItem value="UMBRELLA_BODY">Umbrella Body</SelectItem>
+                <SelectItem value="SACCO">SACCO</SelectItem>
+                <SelectItem value="ASSOCIATION">Association</SelectItem>
+                <SelectItem value="STAGE">Stage</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full md:w-[150px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="ACTIVE">Active</SelectItem>
+                <SelectItem value="INACTIVE">Inactive</SelectItem>
+                <SelectItem value="PENDING">Pending</SelectItem>
+                <SelectItem value="SUSPENDED">Suspended</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -116,11 +188,14 @@ export default function OrganizationListPage() {
                         <Building2 className="h-5 w-5 text-primary" />
                       </div>
                       <div>
-                        <p className="font-medium">{org.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{org.name}</p>
+                          <Badge variant="outline" className="text-xs">{org.code}</Badge>
+                        </div>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Users className="h-3 w-3" />
-                          {org.memberCount.toLocaleString()} members
-                          {org.county && ` • ${org.county}`}
+                          {(org.verifiedMembers ?? org.memberCount ?? 0).toLocaleString()} members
+                          {org.subCounty && ` • ${org.subCounty}`}
                         </div>
                       </div>
                     </div>

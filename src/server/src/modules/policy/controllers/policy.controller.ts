@@ -119,6 +119,26 @@ export class PolicyController {
   }
 
   /**
+   * Get my policies (alias for GET /policies)
+   * Used by web dashboard rider portal
+   */
+  @Get('my')
+  @ApiOperation({
+    summary: 'Get my policies',
+    description: 'Retrieve all policies for the authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of policies',
+  })
+  async getMyPolicies(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ data: PolicySummary[] }> {
+    const policies = await this.policyService.getUserPolicies(user.userId);
+    return { data: policies };
+  }
+
+  /**
    * Get policy details by ID
    * Per FEAT-POL-001
    */

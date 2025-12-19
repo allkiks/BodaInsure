@@ -299,7 +299,7 @@ export class AuthController {
   async logoutAll(
     @CurrentUser() user: ICurrentUser,
   ): Promise<{ sessionsRevoked: number }> {
-    const count = await this.authService.logoutAll(user.id);
+    const count = await this.authService.logoutAll(user.userId);
     return { sessionsRevoked: count };
   }
 

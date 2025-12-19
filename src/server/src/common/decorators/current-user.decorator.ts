@@ -2,7 +2,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { Request } from 'express';
 
 export interface ICurrentUser {
-  id: string;
+  userId: string;
   phone: string;
   role: string;
   organizationId?: string;

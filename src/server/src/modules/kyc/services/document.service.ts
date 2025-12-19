@@ -20,6 +20,7 @@ import {
   ValidationType,
   ValidationResult,
 } from '../entities/kyc-validation.entity.js';
+import { StorageService } from '../../storage/services/storage.service.js';
 
 /**
  * Maximum file size for document upload (10MB)
@@ -72,6 +73,7 @@ export class DocumentService {
     private readonly documentRepository: Repository<Document>,
     @InjectRepository(KycValidation)
     private readonly validationRepository: Repository<KycValidation>,
+    private readonly storageService: StorageService,
   ) {}
 
   /**
@@ -170,8 +172,23 @@ export class DocumentService {
 
     await this.documentRepository.save(document);
 
-    // TODO: Upload file to S3
-    // await this.storageService.upload(storageKey, data.file, data.mimeType);
+    // Upload file to storage (local or S3/MinIO based on config)
+    const fileName = `${data.documentType}_${documentId}.${extension}`;
+    const uploadResult = await this.storageService.uploadKycDocument(
+      data.userId,
+      fileName,
+      data.file,
+      { contentType: data.mimeType },
+    );
+
+    if (!uploadResult.success) {
+      this.logger.error(`Failed to upload document to storage: ${uploadResult.error}`);
+      throw new BadRequestException('Failed to upload document. Please try again.');
+    }
+
+    // Update storage key with actual path from storage service
+    document.storageKey = uploadResult.key;
+    await this.documentRepository.save(document);
 
     // Run preliminary validations
     const validationResults = await this.runPreliminaryValidations(document, data.file);
@@ -456,5 +473,59 @@ export class DocumentService {
    */
   getDocumentTypeLabel(type: DocumentType): string {
     return DOCUMENT_TYPE_LABELS[type];
+  }
+
+  /**
+   * Get queue statistics for admin dashboard
+   */
+  async getQueueStats(): Promise<{
+    pending: number;
+    approvedToday: number;
+    rejectedToday: number;
+    averageProcessingTime: number;
+  }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Count pending documents
+    const pending = await this.documentRepository.count({
+      where: [
+        { status: DocumentStatus.PENDING, isCurrent: true },
+        { status: DocumentStatus.IN_REVIEW, isCurrent: true },
+      ],
+    });
+
+    // Count approved today
+    const approvedToday = await this.documentRepository
+      .createQueryBuilder('doc')
+      .where('doc.status = :status', { status: DocumentStatus.APPROVED })
+      .andWhere('doc.reviewed_at >= :today', { today })
+      .getCount();
+
+    // Count rejected today
+    const rejectedToday = await this.documentRepository
+      .createQueryBuilder('doc')
+      .where('doc.status = :status', { status: DocumentStatus.REJECTED })
+      .andWhere('doc.reviewed_at >= :today', { today })
+      .getCount();
+
+    // Calculate average processing time (in minutes)
+    const avgResult = await this.documentRepository
+      .createQueryBuilder('doc')
+      .select('AVG(EXTRACT(EPOCH FROM (doc.reviewed_at - doc.created_at)) / 60)', 'avgMinutes')
+      .where('doc.reviewed_at IS NOT NULL')
+      .andWhere('doc.reviewed_at >= :thirtyDaysAgo', {
+        thirtyDaysAgo: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      })
+      .getRawOne();
+
+    const averageProcessingTime = Math.round(avgResult?.avgMinutes ?? 0);
+
+    return {
+      pending,
+      approvedToday,
+      rejectedToday,
+      averageProcessingTime,
+    };
   }
 }

@@ -1,11 +1,12 @@
 import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, DataSource } from 'typeorm';
 import {
   Organization,
   OrganizationType,
   OrganizationStatus,
 } from '../entities/organization.entity.js';
+import { MembershipStatus } from '../entities/membership.entity.js';
 
 /**
  * Create organization request
@@ -81,6 +82,34 @@ export interface OrganizationStats {
 }
 
 /**
+ * Single organization statistics
+ */
+export interface SingleOrganizationStats {
+  totalMembers: number;
+  activeMembers: number;
+  enrolledMembers: number;
+  complianceRate: number;
+}
+
+/**
+ * Member with user info
+ */
+export interface MemberWithUser {
+  id: string;
+  userId: string;
+  role: string;
+  status: string;
+  memberNumber: string | null;
+  joinedAt: Date | null;
+  user: {
+    id: string;
+    phone: string;
+    fullName: string | null;
+    kycStatus: string;
+  };
+}
+
+/**
  * Organization Service
  * Manages organizations (KBA, SACCOs, etc.)
  */
@@ -91,6 +120,7 @@ export class OrganizationService {
   constructor(
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -461,5 +491,128 @@ export class OrganizationService {
     }
 
     return counts;
+  }
+
+  /**
+   * Get statistics for a specific organization
+   */
+  async getOrganizationStats(id: string): Promise<SingleOrganizationStats> {
+    // Verify organization exists
+    await this.getById(id);
+
+    // Count members
+    const [memberStats] = await this.dataSource.query(`
+      SELECT
+        COUNT(*) as total_members,
+        COUNT(*) FILTER (WHERE m.status = 'ACTIVE') as active_members
+      FROM memberships m
+      WHERE m.organization_id = $1
+    `, [id]);
+
+    // Count members with active policies (enrolled)
+    const [enrolledStats] = await this.dataSource.query(`
+      SELECT COUNT(DISTINCT m.user_id) as enrolled_members
+      FROM memberships m
+      JOIN policies p ON p.user_id = m.user_id
+      WHERE m.organization_id = $1
+        AND m.status = 'ACTIVE'
+        AND p.status = 'ACTIVE'
+    `, [id]);
+
+    const totalMembers = parseInt(memberStats?.total_members || '0', 10);
+    const activeMembers = parseInt(memberStats?.active_members || '0', 10);
+    const enrolledMembers = parseInt(enrolledStats?.enrolled_members || '0', 10);
+    const complianceRate = activeMembers > 0 ? (enrolledMembers / activeMembers) * 100 : 0;
+
+    return {
+      totalMembers,
+      activeMembers,
+      enrolledMembers,
+      complianceRate: Math.round(complianceRate * 100) / 100,
+    };
+  }
+
+  /**
+   * Get members of an organization
+   */
+  async getMembers(
+    organizationId: string,
+    options?: {
+      status?: MembershipStatus;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+  ): Promise<{ members: MemberWithUser[]; total: number }> {
+    // Verify organization exists
+    await this.getById(organizationId);
+
+    const { status, search, page = 1, limit = 20 } = options ?? {};
+
+    // Build query to get members with user info
+    let query = `
+      SELECT
+        m.id,
+        m.user_id as "userId",
+        m.role,
+        m.status,
+        m.member_number as "memberNumber",
+        m.joined_at as "joinedAt",
+        u.id as "user_id",
+        u.phone as "user_phone",
+        u.full_name as "user_fullName",
+        u.kyc_status as "user_kycStatus"
+      FROM memberships m
+      JOIN users u ON u.id = m.user_id
+      WHERE m.organization_id = $1
+        AND u.deleted_at IS NULL
+    `;
+
+    const params: (string | number)[] = [organizationId];
+    let paramIndex = 2;
+
+    if (status) {
+      query += ` AND m.status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    if (search) {
+      query += ` AND (
+        u.phone ILIKE $${paramIndex}
+        OR u.full_name ILIKE $${paramIndex}
+        OR m.member_number ILIKE $${paramIndex}
+      )`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as total FROM (${query}) as subquery`;
+    const [countResult] = await this.dataSource.query(countQuery, params);
+    const total = parseInt(countResult?.total || '0', 10);
+
+    // Add pagination
+    query += ` ORDER BY m.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    params.push(limit, (page - 1) * limit);
+
+    const rows = await this.dataSource.query(query, params);
+
+    const members: MemberWithUser[] = rows.map((row: Record<string, unknown>) => ({
+      id: row.id as string,
+      userId: row.userId as string,
+      role: row.role as string,
+      status: row.status as string,
+      memberNumber: row.memberNumber as string | null,
+      joinedAt: row.joinedAt as Date | null,
+      user: {
+        id: row.user_id as string,
+        phone: row.user_phone as string,
+        fullName: row.user_fullName as string | null,
+        kycStatus: row.user_kycStatus as string,
+      },
+    }));
+
+    return { members, total };
   }
 }

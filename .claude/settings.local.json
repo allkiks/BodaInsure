@@ -36,7 +36,14 @@
       "Bash(timeout 180 docker logs:*)",
       "Bash(npx expo install --fix)",
       "Bash(npx tsc:*)",
-      "Bash(npx expo install:*)"
+      "Bash(npx expo install:*)",
+      "Bash(find:*)",
+      "Bash(cd:*)",
+      "Bash(if not exist \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\server\\\\src\\\\modules\\\\seeding\" mkdir \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\server\\\\src\\\\modules\\\\seeding\")",
+      "Bash(timeout 45 docker logs:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3YzM3ZGNlOS1mY2VjLTRiODAtYjRmZS01NmM0ZTY1M2QwZmUiLCJwaG9uZSI6IisyNTQwMDAwMDAwMDAiLCJyb2xlIjoicGxhdGZvcm1fYWRtaW4iLCJvcmdhbml6YXRpb25JZCI6bnVsbCwiaWF0IjoxNzY2MDc2MDQzLCJleHAiOjE3Njg2NjgwNDN9.8tAZmsGe-TzrrovwlIw_Zs-oD8eE05uLaqppIuqCC0M\")",
+      "Bash(docker restart:*)",
+      "Bash(timeout 5 docker logs:*)"
     ]
   }
 }

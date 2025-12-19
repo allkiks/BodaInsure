@@ -18,6 +18,7 @@ import { HealthModule } from './modules/health/health.module.js';
 import { UssdModule } from './modules/ussd/ussd.module.js';
 import { QueueModule } from './modules/queue/queue.module.js';
 import { AdminModule } from './modules/admin/admin.module.js';
+import { SeedingModule } from './modules/seeding/seeding.module.js';
 import appConfig from './config/app.config.js';
 import databaseConfig from './config/database.config.js';
 import redisConfig from './config/redis.config.js';
@@ -80,6 +81,9 @@ import redisConfig from './config/redis.config.js';
     HealthModule,
     UssdModule,
     AdminModule,
+
+    // Seeding Module (seeds config data on first run)
+    SeedingModule,
 
     // Queue Module (BullMQ)
     QueueModule,

@@ -15,10 +15,10 @@ export const reportsApi = {
    * List available report definitions
    */
   getDefinitions: async (): Promise<ReportDefinition[]> => {
-    const response = await apiClient.get<ReportDefinition[]>(
+    const response = await apiClient.get<{ data: ReportDefinition[] }>(
       API_ENDPOINTS.REPORT_DEFINITIONS
     );
-    return response.data;
+    return response.data.data;
   },
 
   /**
@@ -36,11 +36,26 @@ export const reportsApi = {
    * Get generated reports history
    */
   getGeneratedReports: async (page = 1, limit = 20): Promise<PaginatedResponse<GeneratedReport>> => {
-    const response = await apiClient.get<PaginatedResponse<GeneratedReport>>(
-      API_ENDPOINTS.REPORTS,
-      { params: { page, limit } }
-    );
-    return response.data;
+    const response = await apiClient.get<{
+      data: {
+        reports: GeneratedReport[];
+        total: number;
+        page: number;
+        limit: number;
+        totalPages: number;
+      };
+    }>(API_ENDPOINTS.REPORTS, { params: { page, limit } });
+
+    const { reports, total, totalPages } = response.data.data;
+    return {
+      data: reports,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+    };
   },
 
   /**

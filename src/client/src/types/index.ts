@@ -27,13 +27,15 @@ export type UserStatus = 'active' | 'inactive' | 'suspended' | 'pending';
 export type Language = 'en' | 'sw';
 
 // KYC types
+// Server uses uppercase status values
 export type KycStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+export type DocumentStatus = 'PENDING' | 'PROCESSING' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED';
 
 export interface KycDocument {
   id: string;
   userId: string;
   type: DocumentType;
-  status: KycStatus;
+  status: DocumentStatus;
   fileUrl: string;
   rejectionReason?: string;
   reviewedBy?: string;
@@ -42,7 +44,11 @@ export interface KycDocument {
   updatedAt: string;
 }
 
-export type DocumentType = 'national_id_front' | 'national_id_back' | 'driving_license' | 'selfie';
+// Server document types (uppercase)
+export type DocumentType = 'ID_FRONT' | 'ID_BACK' | 'LICENSE' | 'LOGBOOK' | 'KRA_PIN' | 'PHOTO';
+
+// Legacy document type mapping (for older code)
+export type LegacyDocumentType = 'national_id_front' | 'national_id_back' | 'driving_license' | 'selfie';
 
 // Payment types
 export interface Payment {
@@ -96,21 +102,131 @@ export type PolicyStatus = 'pending' | 'active' | 'expired' | 'cancelled' | 'lap
 export interface Organization {
   id: string;
   name: string;
+  code: string;
   type: OrganizationType;
   parentId?: string;
+  description?: string;
+  registrationNumber?: string;
+  kraPin?: string;
   contactPhone?: string;
   contactEmail?: string;
+  address?: string;
+  countyCode?: string;
   county?: string;
   subCounty?: string;
-  status: OrganizationStatus;
+  ward?: string;
+  leaderName?: string;
+  leaderPhone?: string;
+  secretaryName?: string;
+  secretaryPhone?: string;
+  treasurerName?: string;
+  treasurerPhone?: string;
+  estimatedMembers?: number;
+  verifiedMembers?: number;
   memberCount: number;
+  commissionRate?: number;
+  status: OrganizationStatus;
+  verifiedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export type OrganizationType = 'umbrella' | 'sacco' | 'association';
+export interface CreateOrganizationRequest {
+  name: string;
+  code: string;
+  type: OrganizationType;
+  parentId?: string;
+  description?: string;
+  registrationNumber?: string;
+  kraPin?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  address?: string;
+  countyCode?: string;
+  subCounty?: string;
+  ward?: string;
+  leaderName?: string;
+  leaderPhone?: string;
+  secretaryName?: string;
+  secretaryPhone?: string;
+  treasurerName?: string;
+  treasurerPhone?: string;
+  estimatedMembers?: number;
+  commissionRate?: number;
+}
 
-export type OrganizationStatus = 'active' | 'inactive' | 'pending';
+export interface UpdateOrganizationRequest {
+  name?: string;
+  description?: string;
+  registrationNumber?: string;
+  kraPin?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  address?: string;
+  countyCode?: string;
+  subCounty?: string;
+  ward?: string;
+  leaderName?: string;
+  leaderPhone?: string;
+  secretaryName?: string;
+  secretaryPhone?: string;
+  treasurerName?: string;
+  treasurerPhone?: string;
+  estimatedMembers?: number;
+  commissionRate?: number;
+  status?: OrganizationStatus;
+}
+
+export type OrganizationType = 'UMBRELLA_BODY' | 'SACCO' | 'ASSOCIATION' | 'STAGE';
+
+export type OrganizationStatus = 'ACTIVE' | 'INACTIVE' | 'PENDING' | 'SUSPENDED';
+
+// Policy Terms types
+export interface PolicyTerms {
+  id: string;
+  version: string;
+  type: PolicyTermsType;
+  title: string;
+  content: string;
+  contentSw?: string;
+  summary: string;
+  summarySw?: string;
+  keyTerms: string[];
+  keyTermsSw?: string[];
+  inclusions: string[];
+  exclusions: string[];
+  freeLookDays: number;
+  underwriterName: string;
+  cancellationPolicy: string;
+  claimsProcess: string;
+  effectiveFrom: string;
+  effectiveTo?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PolicyTermsType = 'TPO' | 'COMPREHENSIVE';
+
+export interface CreatePolicyTermsRequest {
+  version: string;
+  type: PolicyTermsType;
+  title: string;
+  content: string;
+  contentSw?: string;
+  summary: string;
+  summarySw?: string;
+  keyTerms: string[];
+  keyTermsSw?: string[];
+  inclusions: string[];
+  exclusions: string[];
+  freeLookDays: number;
+  underwriterName: string;
+  cancellationPolicy: string;
+  claimsProcess: string;
+  effectiveFrom: string;
+  effectiveTo?: string;
+}
 
 export interface Membership {
   id: string;

@@ -531,20 +531,18 @@ export class ReportService {
   ): Promise<{ reports: GeneratedReport[]; total: number }> {
     const { status, page = 1, limit = 20 } = options ?? {};
 
-    const query = this.reportRepository
-      .createQueryBuilder('r')
-      .leftJoinAndSelect('r.reportDefinition', 'd')
-      .where('r.user_id = :userId', { userId });
-
+    const whereCondition: Record<string, unknown> = { userId };
     if (status) {
-      query.andWhere('r.status = :status', { status });
+      whereCondition.status = status;
     }
 
-    const [reports, total] = await query
-      .orderBy('r.created_at', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getManyAndCount();
+    const [reports, total] = await this.reportRepository.findAndCount({
+      where: whereCondition,
+      relations: ['reportDefinition'],
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
 
     return { reports, total };
   }

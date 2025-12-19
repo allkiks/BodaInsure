@@ -9,6 +9,7 @@ import { KycService } from './services/kyc.service.js';
 import { KycController } from './controllers/kyc.controller.js';
 import { IdentityModule } from '../identity/identity.module.js';
 import { NotificationModule } from '../notification/notification.module.js';
+import { StorageModule } from '../storage/storage.module.js';
 
 @Module({
   imports: [
@@ -21,6 +22,8 @@ import { NotificationModule } from '../notification/notification.module.js';
     IdentityModule,
     // Import NotificationModule for KYC status notifications
     forwardRef(() => NotificationModule),
+    // Import StorageModule for document storage
+    StorageModule,
   ],
   controllers: [KycController],
   providers: [DocumentService, KycService],

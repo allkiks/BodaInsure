@@ -28,6 +28,7 @@ import {
   CreatePolicyTermsRequest,
 } from '../services/policy-terms.service.js';
 import { PolicyTermsType } from '../entities/policy-terms.entity.js';
+import { UserRole } from '../../identity/entities/user.entity.js';
 
 /**
  * Create policy terms DTO
@@ -299,7 +300,7 @@ export class PolicyTermsController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'compliance')
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create new policy terms version' })
   @ApiResponse({ status: 201, description: 'Terms created' })
@@ -327,7 +328,7 @@ export class PolicyTermsController {
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'compliance')
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List all policy terms versions' })
   @ApiQuery({ name: 'type', required: false, enum: PolicyTermsType })
@@ -365,7 +366,7 @@ export class PolicyTermsController {
 
   @Put(':id/deactivate')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'compliance')
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Deactivate policy terms version' })
   async deactivateTerms(@Param('id', ParseUUIDPipe) id: string) {
@@ -383,7 +384,7 @@ export class PolicyTermsController {
 
   @Post('seed')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
+  @Roles(UserRole.PLATFORM_ADMIN)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Seed default TPO terms' })

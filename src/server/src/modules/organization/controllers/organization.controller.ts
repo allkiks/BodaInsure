@@ -10,17 +10,37 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+} from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../identity/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../../../common/guards/roles.guard.js';
+import { Roles } from '../../../common/decorators/roles.decorator.js';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import type { ICurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { OrganizationService } from '../services/organization.service.js';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
 import { UpdateOrganizationDto } from '../dto/update-organization.dto.js';
 import { OrganizationQueryDto } from '../dto/organization-query.dto.js';
+import { UserRole } from '../../identity/entities/user.entity.js';
+import { MembershipStatus } from '../entities/membership.entity.js';
 
 /**
  * Organization Controller
  * Manages KBA/SACCO organizations
+ *
+ * Security: Requires admin roles for modification, read access for authenticated users
  */
+@ApiTags('Organizations')
 @Controller('organizations')
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class OrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}
 
@@ -28,7 +48,15 @@ export class OrganizationController {
    * Create a new organization
    */
   @Post()
-  async create(@Body() dto: CreateOrganizationDto) {
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.KBA_ADMIN)
+  @ApiOperation({ summary: 'Create organization', description: 'Create a new organization (KBA, SACCO, etc.)' })
+  @ApiResponse({ status: 201, description: 'Organization created' })
+  @ApiResponse({ status: 403, description: 'Forbidden - admin role required' })
+  async create(
+    @Body() dto: CreateOrganizationDto,
+    @CurrentUser() _user: ICurrentUser,
+  ) {
     const organization = await this.organizationService.create(dto);
     return {
       id: organization.id,
@@ -43,6 +71,10 @@ export class OrganizationController {
    * Get organization by ID
    */
   @Get(':id')
+  @ApiOperation({ summary: 'Get organization by ID' })
+  @ApiParam({ name: 'id', description: 'Organization ID' })
+  @ApiResponse({ status: 200, description: 'Organization details' })
+  @ApiResponse({ status: 404, description: 'Organization not found' })
   async getById(@Param('id', ParseUUIDPipe) id: string) {
     const organization = await this.organizationService.getById(id);
     return {
@@ -105,9 +137,17 @@ export class OrganizationController {
    * Update organization
    */
   @Put(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.KBA_ADMIN, UserRole.SACCO_ADMIN)
+  @ApiOperation({ summary: 'Update organization' })
+  @ApiParam({ name: 'id', description: 'Organization ID' })
+  @ApiResponse({ status: 200, description: 'Organization updated' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'Organization not found' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateOrganizationDto,
+    @CurrentUser() _user: ICurrentUser,
   ) {
     const organization = await this.organizationService.update(id, dto);
     return {
@@ -124,11 +164,16 @@ export class OrganizationController {
    */
   @Post(':id/verify')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.KBA_ADMIN)
+  @ApiOperation({ summary: 'Verify organization' })
+  @ApiParam({ name: 'id', description: 'Organization ID' })
+  @ApiResponse({ status: 200, description: 'Organization verified' })
   async verify(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body('verifiedBy') verifiedBy: string,
+    @CurrentUser() user: ICurrentUser,
   ) {
-    const organization = await this.organizationService.verify(id, verifiedBy);
+    const organization = await this.organizationService.verify(id, user.userId);
     return {
       id: organization.id,
       status: organization.status,
@@ -141,6 +186,11 @@ export class OrganizationController {
    */
   @Post(':id/suspend')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.KBA_ADMIN)
+  @ApiOperation({ summary: 'Suspend organization' })
+  @ApiParam({ name: 'id', description: 'Organization ID' })
+  @ApiResponse({ status: 200, description: 'Organization suspended' })
   async suspend(
     @Param('id', ParseUUIDPipe) id: string,
     @Body('reason') reason?: string,
@@ -157,6 +207,11 @@ export class OrganizationController {
    */
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.KBA_ADMIN)
+  @ApiOperation({ summary: 'Reactivate organization' })
+  @ApiParam({ name: 'id', description: 'Organization ID' })
+  @ApiResponse({ status: 200, description: 'Organization reactivated' })
   async reactivate(@Param('id', ParseUUIDPipe) id: string) {
     const organization = await this.organizationService.reactivate(id);
     return {
@@ -170,6 +225,12 @@ export class OrganizationController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @ApiOperation({ summary: 'Delete organization (soft delete)' })
+  @ApiParam({ name: 'id', description: 'Organization ID' })
+  @ApiResponse({ status: 204, description: 'Organization deleted' })
+  @ApiResponse({ status: 403, description: 'Platform admin only' })
   async delete(@Param('id', ParseUUIDPipe) id: string) {
     await this.organizationService.delete(id);
   }
@@ -214,10 +275,53 @@ export class OrganizationController {
   }
 
   /**
-   * Get organization statistics
+   * Get global organization statistics
    */
   @Get('stats/overview')
-  async getStats() {
+  async getGlobalStats() {
     return this.organizationService.getStats();
+  }
+
+  /**
+   * Get organization-specific statistics
+   */
+  @Get(':id/stats')
+  @ApiOperation({ summary: 'Get organization statistics' })
+  @ApiParam({ name: 'id', description: 'Organization ID' })
+  @ApiResponse({ status: 200, description: 'Organization statistics' })
+  @ApiResponse({ status: 404, description: 'Organization not found' })
+  async getOrganizationStats(@Param('id', ParseUUIDPipe) id: string) {
+    return this.organizationService.getOrganizationStats(id);
+  }
+
+  /**
+   * Get organization members
+   */
+  @Get(':id/members')
+  @ApiOperation({ summary: 'Get organization members' })
+  @ApiParam({ name: 'id', description: 'Organization ID' })
+  @ApiResponse({ status: 200, description: 'Organization members' })
+  @ApiResponse({ status: 404, description: 'Organization not found' })
+  async getMembers(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('status') status?: string,
+    @Query('q') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const { members, total } = await this.organizationService.getMembers(id, {
+      status: status as MembershipStatus | undefined,
+      search,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+    });
+
+    return {
+      members,
+      total,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+      totalPages: Math.ceil(total / (limit ? parseInt(limit, 10) : 20)),
+    };
   }
 }

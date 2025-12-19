@@ -63,9 +63,33 @@ export const API_ENDPOINTS = {
   ORGANIZATIONS: '/organizations',
   MEMBERSHIPS: '/memberships',
 
-  // KYC
+  // KYC (Admin)
   KYC_PENDING: '/kyc/admin/pending',
   KYC_DOCUMENTS: '/kyc/admin/documents',
+
+  // KYC (User self-service)
+  KYC_STATUS: '/kyc/status',
+  KYC_UPLOAD: '/kyc/documents',
+  KYC_MY_DOCUMENTS: '/kyc/documents',
+
+  // Wallet
+  WALLET: '/wallet',
+  WALLET_TRANSACTIONS: '/wallet/transactions',
+
+  // Payments
+  PAYMENTS: '/payments',
+  PAYMENTS_STK_PUSH: '/payments/stk-push',
+  PAYMENTS_STATUS: '/payments/status',
+  PAYMENTS_HISTORY: '/payments/history',
+
+  // Policies
+  POLICIES: '/policies',
+  POLICIES_MY: '/policies/my',
+
+  // User Profile
+  USER_PROFILE: '/users/me',
+  USER_UPDATE_PROFILE: '/users/me',
+  USER_DELETE_ACCOUNT: '/users/me/delete-request',
 
   // Reports
   REPORTS: '/reports',

@@ -9,7 +9,16 @@ import { kycApi } from '@/services/api/kyc.api';
 import { maskPhone, formatDateTime } from '@/lib/utils';
 import { useState } from 'react';
 
+// Document labels matching server DocumentType enum values
 const documentTypeLabels: Record<string, string> = {
+  // Server document types (uppercase)
+  ID_FRONT: 'National ID (Front)',
+  ID_BACK: 'National ID (Back)',
+  LICENSE: 'Driving License',
+  LOGBOOK: 'Vehicle Logbook',
+  KRA_PIN: 'KRA PIN Certificate',
+  PHOTO: 'Passport Photo',
+  // Legacy types (for backwards compatibility)
   national_id_front: 'National ID (Front)',
   national_id_back: 'National ID (Back)',
   driving_license: 'Driving License',
@@ -23,12 +32,18 @@ export default function KycQueuePage() {
   const { data: stats } = useQuery({
     queryKey: ['kyc', 'stats'],
     queryFn: kycApi.getQueueStats,
+    retry: false, // Don't retry if endpoint doesn't exist
   });
 
   const { data: queue, isLoading } = useQuery({
     queryKey: ['kyc', 'pending', page],
     queryFn: () => kycApi.getPendingQueue({ page }),
   });
+
+  // Safely access nested properties
+  const totalDocs = queue?.meta?.total ?? 0;
+  const totalPages = queue?.meta?.totalPages ?? 1;
+  const currentPage = queue?.meta?.page ?? page;
 
   return (
     <div className="space-y-6">
@@ -48,7 +63,7 @@ export default function KycQueuePage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-yellow-600">
-              {stats?.pending.toLocaleString() ?? 0}
+              {(stats?.pending ?? 0).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -59,7 +74,7 @@ export default function KycQueuePage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-green-600">
-              {stats?.approvedToday.toLocaleString() ?? 0}
+              {(stats?.approvedToday ?? 0).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -70,7 +85,7 @@ export default function KycQueuePage() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-red-600">
-              {stats?.rejectedToday.toLocaleString() ?? 0}
+              {(stats?.rejectedToday ?? 0).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -95,7 +110,7 @@ export default function KycQueuePage() {
             Pending Documents
           </CardTitle>
           <CardDescription>
-            {queue?.meta.total ?? 0} document(s) awaiting review
+            {totalDocs} document(s) awaiting review
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -143,10 +158,10 @@ export default function KycQueuePage() {
               ))}
 
               {/* Pagination */}
-              {queue.meta.totalPages > 1 && (
+              {totalPages > 1 && (
                 <div className="mt-4 flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
-                    Page {queue.meta.page} of {queue.meta.totalPages}
+                    Page {currentPage} of {totalPages}
                   </p>
                   <div className="flex gap-2">
                     <Button
@@ -161,7 +176,7 @@ export default function KycQueuePage() {
                       variant="outline"
                       size="sm"
                       onClick={() => setPage((p) => p + 1)}
-                      disabled={page >= queue.meta.totalPages}
+                      disabled={page >= totalPages}
                     >
                       Next
                     </Button>

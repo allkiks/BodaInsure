@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   Query,
+  Res,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -14,7 +15,10 @@ import {
   FileTypeValidator,
   HttpCode,
   HttpStatus,
+  NotFoundException,
+  StreamableFile,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -33,6 +37,7 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator.j
 import type { ICurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { DocumentService } from '../services/document.service.js';
 import { KycService } from '../services/kyc.service.js';
+import { StorageService } from '../../storage/services/storage.service.js';
 import { DocumentType, DocumentStatus } from '../entities/document.entity.js';
 import {
   UploadDocumentDto,
@@ -55,6 +60,7 @@ export class KycController {
   constructor(
     private readonly documentService: DocumentService,
     private readonly kycService: KycService,
+    private readonly storageService: StorageService,
   ) {}
 
   /**
@@ -74,7 +80,7 @@ export class KycController {
   async getKycStatus(
     @CurrentUser() user: ICurrentUser,
   ): Promise<KycStatusResponseDto> {
-    return this.kycService.getKycStatus(user.id);
+    return this.kycService.getKycStatus(user.userId);
   }
 
   /**
@@ -141,7 +147,7 @@ export class KycController {
     @Body() dto: UploadDocumentDto,
   ): Promise<UploadDocumentResponseDto> {
     const result = await this.documentService.uploadDocument({
-      userId: user.id,
+      userId: user.userId,
       documentType: dto.documentType,
       file: file.buffer,
       mimeType: file.mimetype,
@@ -152,7 +158,7 @@ export class KycController {
     });
 
     // Update overall KYC status
-    await this.kycService.updateKycStatus(user.id);
+    await this.kycService.updateKycStatus(user.userId);
 
     return {
       documentId: result.documentId ?? '',
@@ -177,7 +183,7 @@ export class KycController {
     description: 'Documents retrieved',
   })
   async getMyDocuments(@CurrentUser() user: ICurrentUser) {
-    const documents = await this.documentService.getUserDocuments(user.id);
+    const documents = await this.documentService.getUserDocuments(user.userId);
     return documents.map(doc => ({
       id: doc.id,
       type: doc.documentType,
@@ -208,7 +214,7 @@ export class KycController {
     description: 'Missing or rejected documents',
   })
   async submitForReview(@CurrentUser() user: ICurrentUser) {
-    return this.kycService.submitForReview(user.id);
+    return this.kycService.submitForReview(user.userId);
   }
 
   /**
@@ -221,10 +227,38 @@ export class KycController {
     description: 'Returns a brief summary of KYC status for dashboard display',
   })
   async getKycSummary(@CurrentUser() user: ICurrentUser) {
-    return this.kycService.getKycSummary(user.id);
+    return this.kycService.getKycSummary(user.userId);
   }
 
   // ============== Admin Endpoints ==============
+
+  /**
+   * Get KYC queue statistics (Admin)
+   * GET /api/v1/kyc/admin/pending/stats
+   */
+  @Get('admin/pending/stats')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @ApiOperation({
+    summary: 'Get KYC queue statistics (Admin)',
+    description: 'Returns statistics for the KYC review queue',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Queue statistics retrieved',
+    schema: {
+      type: 'object',
+      properties: {
+        pending: { type: 'number', description: 'Number of documents pending review' },
+        approvedToday: { type: 'number', description: 'Number of documents approved today' },
+        rejectedToday: { type: 'number', description: 'Number of documents rejected today' },
+        averageProcessingTime: { type: 'number', description: 'Average processing time in minutes' },
+      },
+    },
+  })
+  async getQueueStats() {
+    return this.documentService.getQueueStats();
+  }
 
   /**
    * Get documents pending review (Admin)
@@ -279,7 +313,7 @@ export class KycController {
   ): Promise<ReviewDocumentResponseDto> {
     const document = await this.documentService.reviewDocument(
       documentId,
-      reviewer.id,
+      reviewer.userId,
       dto.status,
       dto.rejectionReason,
       dto.reviewerNotes,
@@ -318,5 +352,107 @@ export class KycController {
       return { error: 'Document not found' };
     }
     return document;
+  }
+
+  /**
+   * Get document URL for viewing (Admin)
+   * GET /api/v1/kyc/admin/documents/:id/url
+   */
+  @Get('admin/documents/:id/url')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @ApiOperation({
+    summary: 'Get document URL (Admin)',
+    description: 'Returns a URL for viewing the document',
+  })
+  @ApiParam({ name: 'id', description: 'Document ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Document URL retrieved',
+    schema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL for document access' },
+        expiresAt: { type: 'string', format: 'date-time', description: 'URL expiration time' },
+      },
+    },
+  })
+  async getDocumentUrl(@Param('id') documentId: string) {
+    const document = await this.documentService.getDocumentById(documentId);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    // Return URL to the download endpoint
+    const baseUrl = process.env['API_BASE_URL'] || 'http://localhost:3000';
+    const url = `${baseUrl}/api/v1/kyc/admin/documents/${documentId}/download`;
+
+    // Set expiry to 1 hour from now
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    return { url, expiresAt };
+  }
+
+  /**
+   * Download document file (Admin)
+   * GET /api/v1/kyc/admin/documents/:id/download
+   */
+  @Get('admin/documents/:id/download')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @ApiOperation({
+    summary: 'Download document file (Admin)',
+    description: 'Returns the actual document file for viewing',
+  })
+  @ApiParam({ name: 'id', description: 'Document ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Document file',
+  })
+  async downloadDocument(
+    @Param('id') documentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const document = await this.documentService.getDocumentById(documentId);
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    // Extract userId and fileName from storageKey
+    // AWS/MinIO format: "{userId}/{fileName}"
+    // Local format: "{bucket}/{userId}/{fileName}"
+    const keyParts = document.storageKey.split('/');
+    let userId: string | undefined;
+    let fileName: string | undefined;
+
+    if (keyParts.length === 2) {
+      // AWS/MinIO format
+      userId = keyParts[0];
+      fileName = keyParts[1];
+    } else if (keyParts.length >= 3) {
+      // Local format (bucket/userId/fileName)
+      userId = keyParts[1];
+      fileName = keyParts[2];
+    }
+
+    if (!userId || !fileName) {
+      throw new NotFoundException('Invalid storage key format');
+    }
+
+    // Download from storage service
+    const downloadResult = await this.storageService.downloadKycDocument(userId, fileName);
+
+    if (!downloadResult.success || !downloadResult.data) {
+      throw new NotFoundException('Document file not found in storage');
+    }
+
+    // Set response headers
+    res.set({
+      'Content-Type': downloadResult.contentType || document.mimeType || 'application/octet-stream',
+      'Content-Disposition': `inline; filename="${document.originalFilename || fileName}"`,
+      'Cache-Control': 'private, max-age=3600',
+    });
+
+    return new StreamableFile(downloadResult.data);
   }
 }
