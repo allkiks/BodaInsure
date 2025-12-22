@@ -1,0 +1,64 @@
+# =============================================================================
+# BodaInsure - Azure Multi-Container Docker Compose
+# =============================================================================
+# This file is used for Azure App Service multi-container deployments.
+#
+# Usage:
+#   docker-compose -f docker/azure/docker-compose.azure.yml up
+#
+# For Azure deployment, environment variables are injected via App Settings
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ===========================================
+  # API SERVER
+  # ===========================================
+  api:
+    image: ${ACR_NAME:-acrbodainsure}.azurecr.io/bodainsure-api:${TAG:-latest}
+    container_name: bodainsure-api
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ===========================================
+  # ADMIN PORTAL (NGINX)
+  # ===========================================
+  admin:
+    image: ${ACR_NAME:-acrbodainsure}.azurecr.io/bodainsure-admin:${TAG:-latest}
+    container_name: bodainsure-admin
+    restart: always
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M

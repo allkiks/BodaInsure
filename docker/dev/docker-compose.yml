@@ -1,7 +1,7 @@
 # BodaInsure Development Environment
 # 100% Docker-based development - all services run in containers
 #
-# Configuration: All environment variables are in .env (single source of truth)
+# Configuration: All environment variables are in ../../.env.docker (project root)
 #
 # Usage:
 #   make dev-docker  (recommended)
@@ -122,7 +122,7 @@ services:
     container_name: bodainsure-server-dev
     restart: unless-stopped
     env_file:
-      - .env
+      - ../../.env.docker
     ports:
       - "${PORT}:3000"
     volumes:
@@ -157,7 +157,7 @@ services:
     container_name: bodainsure-client-dev
     restart: unless-stopped
     env_file:
-      - .env
+      - ../../.env.docker
     ports:
       - "5173:5173"
     volumes:

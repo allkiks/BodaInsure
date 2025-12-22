@@ -112,10 +112,27 @@ npm run migration:revert
 
 ### 3.3 Environment Configuration
 
-Create `.env` file (see [Section 9](#9-environment-configuration) for full list):
+Environment configuration is centralized at the **project root**:
+
+```
+bodainsure/
+├── .env.example      # Template with all variables (committed)
+├── .env.docker       # Docker development (gitignored)
+├── .env.local        # Local development (gitignored)
+└── .env.production   # Production secrets (gitignored)
+```
+
+For production, copy and configure `.env.production`:
 
 ```bash
-# Required production variables
+# From project root
+cp .env.example .env.production
+# Edit .env.production with production values
+```
+
+Key production variables (see [Section 9](#9-environment-configuration) for full list):
+
+```bash
 NODE_ENV=production
 PORT=3000
 API_PREFIX=api/v1
@@ -237,12 +254,14 @@ npm run build
 
 ### 4.2 Environment Variables
 
-Create `.env.production`:
+The web portal uses `VITE_*` variables from the root `.env.production` file:
 
 ```bash
+# These are already in .env.production at project root:
 VITE_API_URL=https://api.bodainsure.co.ke/api/v1
 VITE_APP_NAME=BodaInsure Admin
-VITE_ENVIRONMENT=production
+VITE_SESSION_TIMEOUT=30
+VITE_ENABLE_MOCK_DATA=false
 ```
 
 ### 4.3 Deployment Options
@@ -446,12 +465,14 @@ eas update --branch production --message "Bug fixes and improvements"
 
 ### 6.0 Development vs Production
 
-BodaInsure provides two Docker configurations:
+BodaInsure provides two Docker configurations with centralized environment files:
 
-| Environment | Location | Purpose |
-|-------------|----------|---------|
-| **Development** | `docker/dev/` | Local development with hot-reload |
-| **Production** | `docker/prod/` | Production deployment |
+| Environment | Docker Config | Env File | Purpose |
+|-------------|---------------|----------|---------|
+| **Development** | `docker/dev/` | `.env.docker` | Local development with hot-reload |
+| **Production** | `docker/prod/` | `.env.production` | Production deployment |
+
+All environment files are located at the **project root** (not in docker directories).
 
 **For local development**, use the one-command setup:
 ```bash
@@ -476,10 +497,11 @@ docker build -f ../../docker/prod/Dockerfile.client -t bodainsure-admin:latest .
 ### 6.2 Docker Compose (Production)
 
 ```bash
+# Production uses .env.production from project root
 cd docker/prod
 
-# Start all services
-docker compose up -d
+# Start all services (specify env file from root)
+docker compose --env-file ../../.env.production up -d
 
 # View logs
 docker compose logs -f api
@@ -492,6 +514,7 @@ docker compose down
 
 ```yaml
 # docker/prod/docker-compose.yml
+# Run with: docker compose --env-file ../../.env.production up -d
 version: '3.8'
 
 services:
@@ -502,8 +525,7 @@ services:
       dockerfile: ../../docker/prod/Dockerfile
     container_name: bodainsure-api
     restart: unless-stopped
-    env_file:
-      - .env
+    # Environment variables are passed via --env-file flag
     environment:
       - NODE_ENV=production
     ports:
@@ -827,6 +849,24 @@ jobs:
 ---
 
 ## 9. Environment Configuration
+
+### Environment File Structure
+
+All environment configuration is centralized at the **project root**:
+
+```
+bodainsure/
+├── .env.example      # Template with all variables (committed to git)
+├── .env.docker       # Docker development - uses service names (gitignored)
+├── .env.local        # Local development - uses localhost (gitignored)
+└── .env.production   # Production secrets (gitignored)
+```
+
+| File | Purpose | Hostnames |
+|------|---------|-----------|
+| `.env.docker` | Docker Compose development | `postgres`, `redis`, `minio` |
+| `.env.local` | Local development (no Docker) | `localhost` |
+| `.env.production` | Production deployment | Production URLs |
 
 ### Complete Environment Variables Reference
 

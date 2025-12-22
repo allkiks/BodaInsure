@@ -1,0 +1,520 @@
+# =============================================================================
+# BodaInsure - Azure App Service Docker Deployment (Production)
+# =============================================================================
+# This workflow deploys the BodaInsure platform to Azure App Service
+# using Docker containers with Azure Container Registry.
+#
+# Triggers: Push to main branch (requires approval), Manual dispatch
+#
+# To use: Copy this file to .github/workflows/azure_appservice_docker_prod.yml
+# =============================================================================
+
+name: Deploy to Azure App Service (Docker - Prod)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/server/**'
+      - 'src/client/**'
+      - 'docker/**'
+  workflow_dispatch:
+    inputs:
+      deploy_server:
+        description: 'Deploy Server'
+        required: true
+        default: true
+        type: boolean
+      deploy_client:
+        description: 'Deploy Client'
+        required: true
+        default: true
+        type: boolean
+      use_staging_slot:
+        description: 'Deploy to staging slot first'
+        required: true
+        default: true
+        type: boolean
+      image_tag:
+        description: 'Image tag to deploy (leave empty for latest commit)'
+        required: false
+        type: string
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  AZURE_WEBAPP_NAME_API: 'app-bodainsure-api-prod'
+  AZURE_WEBAPP_NAME_CLIENT: 'app-bodainsure-admin-prod'
+  AZURE_RESOURCE_GROUP: 'rg-bodainsure-prod'
+  IMAGE_TAG: ${{ github.event.inputs.image_tag || github.sha }}
+
+jobs:
+  # ===========================================
+  # BUILD AND TEST
+  # ===========================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: |
+            src/server/package-lock.json
+            src/client/package-lock.json
+
+      - name: Install and test server
+        working-directory: src/server
+        run: |
+          npm ci
+          npm run lint
+          npm test
+        env:
+          NODE_ENV: test
+
+      - name: Install and test client
+        working-directory: src/client
+        run: |
+          npm ci
+          npm run lint
+
+  # ===========================================
+  # SECURITY SCAN
+  # ===========================================
+  security-scan:
+    name: Security Scan
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ===========================================
+  # BUILD AND PUSH SERVER IMAGE
+  # ===========================================
+  build-server:
+    name: Build Server Image
+    needs: [test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_server != 'false'
+    outputs:
+      image_digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-api
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+            type=raw,value=${{ env.IMAGE_TAG }}
+
+      - name: Build and push server image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: src/server
+          file: docker/prod/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:latest
+          cache-to: type=inline
+          provenance: true
+          sbom: true
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:${{ env.IMAGE_TAG }}
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+  # ===========================================
+  # BUILD AND PUSH CLIENT IMAGE
+  # ===========================================
+  build-client:
+    name: Build Client Image
+    needs: [test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_client != 'false'
+    outputs:
+      image_digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+            type=raw,value=${{ env.IMAGE_TAG }}
+
+      - name: Build and push client image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/prod/Dockerfile.client
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL_PROD }}
+            VITE_APP_NAME=BodaInsure Admin
+          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin:latest
+          cache-to: type=inline
+
+  # ===========================================
+  # DEPLOY SERVER TO STAGING
+  # ===========================================
+  deploy-server-staging:
+    name: Deploy Server to Staging
+    needs: build-server
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_server != 'false' && github.event.inputs.use_staging_slot != 'false'
+    environment:
+      name: production-staging
+      url: https://${{ env.AZURE_WEBAPP_NAME_API }}-staging.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME_API }}
+          slot-name: staging
+          images: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:${{ env.IMAGE_TAG }}
+
+      - name: Health check staging
+        run: |
+          echo "Waiting for staging container to start..."
+          sleep 120
+          for i in {1..15}; do
+            response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_API }}-staging.azurewebsites.net/api/v1/health)
+            if [ "$response" = "200" ]; then
+              echo "Staging health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: Status $response, retrying..."
+            sleep 20
+          done
+          echo "Staging health check failed after 15 attempts"
+          exit 1
+
+  # ===========================================
+  # SWAP SERVER TO PRODUCTION
+  # ===========================================
+  swap-server-production:
+    name: Swap Server to Production
+    needs: deploy-server-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Swap staging to production
+        uses: azure/CLI@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az webapp deployment slot swap \
+              --name ${{ env.AZURE_WEBAPP_NAME_API }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --slot staging \
+              --target-slot production
+
+      - name: Health check production
+        run: |
+          echo "Verifying production deployment..."
+          sleep 30
+          for i in {1..10}; do
+            response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net/api/v1/health)
+            if [ "$response" = "200" ]; then
+              echo "Production health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: Status $response, retrying..."
+            sleep 10
+          done
+          echo "Production health check failed - consider rollback"
+          exit 1
+
+  # ===========================================
+  # DEPLOY SERVER DIRECTLY (No Staging)
+  # ===========================================
+  deploy-server-direct:
+    name: Deploy Server Directly
+    needs: build-server
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_server != 'false' && github.event.inputs.use_staging_slot == 'false'
+    environment:
+      name: production
+      url: https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to production
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME_API }}
+          images: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:${{ env.IMAGE_TAG }}
+
+      - name: Health check
+        run: |
+          echo "Waiting for container to start..."
+          sleep 120
+          for i in {1..15}; do
+            response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net/api/v1/health)
+            if [ "$response" = "200" ]; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: Status $response, retrying..."
+            sleep 20
+          done
+          echo "Health check failed after 15 attempts"
+          exit 1
+
+  # ===========================================
+  # DEPLOY CLIENT TO STAGING
+  # ===========================================
+  deploy-client-staging:
+    name: Deploy Client to Staging
+    needs: build-client
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_client != 'false' && github.event.inputs.use_staging_slot != 'false'
+    environment:
+      name: production-staging
+      url: https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}-staging.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME_CLIENT }}
+          slot-name: staging
+          images: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin:${{ env.IMAGE_TAG }}
+
+      - name: Health check staging
+        run: |
+          echo "Waiting for staging container..."
+          sleep 60
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}-staging.azurewebsites.net/)
+          if [ "$response" = "200" ]; then
+            echo "Staging health check passed!"
+          else
+            echo "Staging health check failed with status: $response"
+            exit 1
+          fi
+
+  # ===========================================
+  # SWAP CLIENT TO PRODUCTION
+  # ===========================================
+  swap-client-production:
+    name: Swap Client to Production
+    needs: deploy-client-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Swap staging to production
+        uses: azure/CLI@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az webapp deployment slot swap \
+              --name ${{ env.AZURE_WEBAPP_NAME_CLIENT }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --slot staging \
+              --target-slot production
+
+  # ===========================================
+  # DEPLOY CLIENT DIRECTLY (No Staging)
+  # ===========================================
+  deploy-client-direct:
+    name: Deploy Client Directly
+    needs: build-client
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_client != 'false' && github.event.inputs.use_staging_slot == 'false'
+    environment:
+      name: production
+      url: https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to production
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME_CLIENT }}
+          images: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin:${{ env.IMAGE_TAG }}
+
+  # ===========================================
+  # CREATE GITHUB RELEASE
+  # ===========================================
+  create-release:
+    name: Create Release
+    needs: [swap-server-production, swap-client-production]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --oneline --no-merges | head -20)
+          else
+            COMMITS=$(git log $LAST_TAG..HEAD --oneline --no-merges)
+          fi
+
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          body: |
+            ## Deployment Info
+            - **Server Image:** `${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:${{ env.IMAGE_TAG }}`
+            - **Client Image:** `${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin:${{ env.IMAGE_TAG }}`
+            - **Commit:** ${{ github.sha }}
+
+            ## Changes
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Rollback
+            To rollback, run:
+            ```bash
+            az webapp deployment slot swap --name ${{ env.AZURE_WEBAPP_NAME_API }} --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --slot staging --target-slot production
+            ```
+          draft: false
+          prerelease: false
+
+  # ===========================================
+  # NOTIFICATION
+  # ===========================================
+  notify:
+    name: Notify
+    needs: [swap-server-production, swap-client-production, deploy-server-direct, deploy-client-direct]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary (Production - Docker)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | Image | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|-------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Server | ${{ needs.swap-server-production.result || needs.deploy-server-direct.result }} | \`bodainsure-api:${{ env.IMAGE_TAG }}\` | https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net |" >> $GITHUB_STEP_SUMMARY
+          echo "| Client | ${{ needs.swap-client-production.result || needs.deploy-client-direct.result }} | \`bodainsure-admin:${{ env.IMAGE_TAG }}\` | https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}.azurewebsites.net |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** \`${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Rollback Instructions" >> $GITHUB_STEP_SUMMARY
+          echo "To rollback server:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "az webapp deployment slot swap --name ${{ env.AZURE_WEBAPP_NAME_API }} --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --slot staging --target-slot production" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To rollback client:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "az webapp deployment slot swap --name ${{ env.AZURE_WEBAPP_NAME_CLIENT }} --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --slot staging --target-slot production" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

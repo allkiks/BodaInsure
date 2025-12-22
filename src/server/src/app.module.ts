@@ -26,10 +26,17 @@ import redisConfig from './config/redis.config.js';
 @Module({
   imports: [
     // Configuration Module - loads environment variables
+    // Priority: root .env.local > root .env.docker > local .env.local > local .env
+    // Note: When running in Docker, env vars are injected via docker-compose env_file
     ConfigModule.forRoot({
       isGlobal: true,
       load: [appConfig, databaseConfig, redisConfig],
-      envFilePath: ['.env.local', '.env'],
+      envFilePath: [
+        '../../.env.local',    // Root: local development
+        '../../.env.docker',   // Root: Docker development
+        '.env.local',          // Server dir: local override
+        '.env',                // Server dir: fallback
+      ],
     }),
 
     // TypeORM Database Connection

@@ -4,6 +4,12 @@
 # This Makefile provides commands for 100% Docker-based development.
 # No services run on the host machine - everything runs in containers.
 #
+# Environment Configuration:
+#   All environment files are at the project root:
+#   - .env.example  (template - committed to git)
+#   - .env.docker   (Docker development - gitignored)
+#   - .env.local    (local development - gitignored)
+#
 # WINDOWS USERS: This Makefile requires Git Bash, WSL, or a Unix shell.
 # For PowerShell/CMD, use: .\dev-docker.cmd start
 
@@ -15,12 +21,13 @@ WAIT := docker run --rm alpine sleep
 
 # Configuration
 DOCKER_COMPOSE_FILE := docker/dev/docker-compose.yml
-DOCKER_COMPOSE := docker compose -f $(DOCKER_COMPOSE_FILE)
+ENV_FILE := .env.docker
+DOCKER_COMPOSE := docker compose -f $(DOCKER_COMPOSE_FILE) --env-file $(ENV_FILE)
 PROJECT_NAME := bodainsure
 
-.PHONY: help dev-docker dev-docker-build dev-docker-up dev-docker-down dev-docker-logs \
+.PHONY: help dev-setup dev-docker dev-docker-build dev-docker-up dev-docker-down dev-docker-logs \
         dev-docker-restart dev-docker-clean dev-docker-tools dev-migrate dev-shell-server \
-        dev-shell-client dev-test dev-lint
+        dev-shell-client dev-test dev-lint check-env
 
 # Default target
 .DEFAULT_GOAL := help
@@ -52,9 +59,40 @@ help: ## Display this help message
 	@echo "  dev-status          Show container status"
 	@echo ""
 
+##@ Setup
+
+check-env: ## Check if .env.docker exists
+	@if [ ! -f .env.docker ]; then \
+		echo "Error: .env.docker not found!"; \
+		echo ""; \
+		echo "Run 'make dev-setup' to create it from .env.example"; \
+		echo "Or manually: cp .env.example .env.docker"; \
+		exit 1; \
+	fi
+
+dev-setup: ## Create .env.docker from .env.example (first-time setup)
+	@echo "Setting up development environment..."
+	@if [ -f .env.docker ]; then \
+		echo "  .env.docker already exists. Skipping."; \
+		echo "  To reset, delete .env.docker and run this command again."; \
+	else \
+		if [ -f .env.example ]; then \
+			cp .env.example .env.docker; \
+			echo "  Created .env.docker from .env.example"; \
+			echo ""; \
+			echo "  Edit .env.docker if you need to customize settings."; \
+			echo "  Default values work for Docker development."; \
+		else \
+			echo "Error: .env.example not found!"; \
+			exit 1; \
+		fi \
+	fi
+	@echo ""
+	@echo "Setup complete! Run 'make dev-docker' to start."
+
 ##@ Development Environment
 
-dev-docker: ## Start the full Docker development environment (builds, starts, runs migrations)
+dev-docker: check-env ## Start the full Docker development environment (builds, starts, runs migrations)
 	@echo "=========================================="
 	@echo "  BodaInsure Docker Development Setup"
 	@echo "=========================================="

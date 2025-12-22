@@ -1,0 +1,347 @@
+# =============================================================================
+# BodaInsure - Azure App Service Native Deployment (Production)
+# =============================================================================
+# This workflow deploys the BodaInsure platform to Azure App Service
+# WITHOUT Docker, using native Node.js runtime.
+#
+# Triggers: Push to main branch (with approval), Manual dispatch
+#
+# To use: Copy this file to .github/workflows/azure_appservice_native_prod.yml
+# =============================================================================
+
+name: Deploy to Azure App Service (Native - Prod)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_server:
+        description: 'Deploy Server'
+        required: true
+        default: true
+        type: boolean
+      deploy_client:
+        description: 'Deploy Client'
+        required: true
+        default: true
+        type: boolean
+      use_staging_slot:
+        description: 'Deploy to staging slot first'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  NODE_VERSION: '20.x'
+  AZURE_WEBAPP_NAME_API: 'app-bodainsure-api-prod'
+  AZURE_WEBAPP_NAME_CLIENT: 'swa-bodainsure-admin-prod'
+  AZURE_RESOURCE_GROUP: 'rg-bodainsure-prod'
+
+jobs:
+  # ===========================================
+  # BUILD AND TEST
+  # ===========================================
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            src/server/package-lock.json
+            src/client/package-lock.json
+
+      # Server Build
+      - name: Install server dependencies
+        working-directory: src/server
+        run: npm ci
+
+      - name: Run server linting
+        working-directory: src/server
+        run: npm run lint
+
+      - name: Run server tests
+        working-directory: src/server
+        run: npm test
+        env:
+          NODE_ENV: test
+
+      - name: Build server
+        working-directory: src/server
+        run: npm run build
+
+      # Client Build
+      - name: Install client dependencies
+        working-directory: src/client
+        run: npm ci
+
+      - name: Run client linting
+        working-directory: src/client
+        run: npm run lint
+
+      - name: Build client
+        working-directory: src/client
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL_PROD }}
+          VITE_APP_NAME: 'BodaInsure Admin'
+
+      # Upload artifacts
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-build
+          path: |
+            src/server/dist
+            src/server/package.json
+            src/server/package-lock.json
+          retention-days: 7
+
+      - name: Upload client artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-build
+          path: src/client/dist
+          retention-days: 7
+
+  # ===========================================
+  # SECURITY SCAN
+  # ===========================================
+  security-scan:
+    name: Security Scan
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run npm audit (server)
+        working-directory: src/server
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Run npm audit (client)
+        working-directory: src/client
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  # ===========================================
+  # DEPLOY SERVER TO STAGING SLOT
+  # ===========================================
+  deploy-server-staging:
+    name: Deploy Server to Staging
+    needs: [build-and-test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_server != 'false' && github.event.inputs.use_staging_slot != 'false'
+    environment:
+      name: production-staging
+      url: https://${{ env.AZURE_WEBAPP_NAME_API }}-staging.azurewebsites.net
+
+    steps:
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server-build
+          path: deploy
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install production dependencies
+        working-directory: deploy
+        run: npm ci --only=production
+
+      - name: Create deployment package
+        working-directory: deploy
+        run: zip -r ../deploy.zip .
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME_API }}
+          slot-name: staging
+          package: deploy.zip
+
+      - name: Health check staging
+        run: |
+          echo "Waiting for staging deployment..."
+          sleep 60
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_API }}-staging.azurewebsites.net/api/v1/health)
+          if [ "$response" = "200" ]; then
+            echo "Staging health check passed!"
+          else
+            echo "Staging health check failed with status: $response"
+            exit 1
+          fi
+
+  # ===========================================
+  # SWAP STAGING TO PRODUCTION
+  # ===========================================
+  swap-server-production:
+    name: Swap Server to Production
+    needs: deploy-server-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Swap staging to production
+        uses: azure/CLI@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az webapp deployment slot swap \
+              --name ${{ env.AZURE_WEBAPP_NAME_API }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --slot staging \
+              --target-slot production
+
+      - name: Health check production
+        run: |
+          echo "Waiting for swap to complete..."
+          sleep 30
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net/api/v1/health)
+          if [ "$response" = "200" ]; then
+            echo "Production health check passed!"
+          else
+            echo "Production health check failed with status: $response"
+            exit 1
+          fi
+
+  # ===========================================
+  # DEPLOY SERVER DIRECTLY (Without Staging)
+  # ===========================================
+  deploy-server-direct:
+    name: Deploy Server Directly
+    needs: [build-and-test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_server != 'false' && github.event.inputs.use_staging_slot == 'false'
+    environment:
+      name: production
+      url: https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net
+
+    steps:
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server-build
+          path: deploy
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install production dependencies
+        working-directory: deploy
+        run: npm ci --only=production
+
+      - name: Create deployment package
+        working-directory: deploy
+        run: zip -r ../deploy.zip .
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to production
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME_API }}
+          package: deploy.zip
+
+      - name: Health check
+        run: |
+          echo "Waiting for deployment..."
+          sleep 60
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net/api/v1/health)
+          if [ "$response" = "200" ]; then
+            echo "Health check passed!"
+          else
+            echo "Health check failed with status: $response"
+            exit 1
+          fi
+
+  # ===========================================
+  # DEPLOY CLIENT TO AZURE STATIC WEB APPS
+  # ===========================================
+  deploy-client:
+    name: Deploy Client
+    needs: [build-and-test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_client != 'false'
+    environment:
+      name: production
+      url: https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}.azurestaticapps.net
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download client artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: client-build
+          path: src/client/dist
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: 'upload'
+          app_location: 'src/client/dist'
+          skip_app_build: true
+          skip_api_build: true
+
+  # ===========================================
+  # POST-DEPLOYMENT NOTIFICATION
+  # ===========================================
+  notify:
+    name: Notify
+    needs: [deploy-server-staging, swap-server-production, deploy-server-direct, deploy-client]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary (Production)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Server | ${{ needs.swap-server-production.result || needs.deploy-server-direct.result }} | https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net |" >> $GITHUB_STEP_SUMMARY
+          echo "| Client | ${{ needs.deploy-client.result }} | https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}.azurestaticapps.net |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Deployed by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Rollback" >> $GITHUB_STEP_SUMMARY
+          echo "To rollback, swap the staging slot back to production:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "az webapp deployment slot swap --name ${{ env.AZURE_WEBAPP_NAME_API }} --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --slot staging --target-slot production" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

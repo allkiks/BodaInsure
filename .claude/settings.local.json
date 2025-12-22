@@ -48,7 +48,14 @@
       "Bash(./node_modules/.bin/tsc:*)",
       "Bash(docker cp:*)",
       "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\server\\\\src\\\\modules\\\\identity\\\\guards\\\\jwt-auth.guard.ts\")",
-      "Bash(docker run:*)"
+      "Bash(docker run:*)",
+      "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\docker\\\\dev\\\\.env\")",
+      "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\docker\\\\prod\\\\.env.example\")",
+      "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\server\\\\.env\")",
+      "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\server\\\\.env.example\")",
+      "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\client\\\\.env.example\")",
+      "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\mobile\\\\.env.example\")",
+      "Bash(powershell -Command:*)"
     ]
   }
 }

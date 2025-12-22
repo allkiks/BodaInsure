@@ -1,0 +1,72 @@
+# =============================================================================
+# BodaInsure Admin Portal - Production Dockerfile
+# =============================================================================
+# Multi-stage build for React/Vite application
+#
+# Build: docker build -f docker/prod/Dockerfile.client \
+#          --build-arg VITE_API_URL=https://api.bodainsure.co.ke/api/v1 \
+#          -t bodainsure-admin:latest .
+# =============================================================================
+
+# ===========================================
+# STAGE 1: BUILD
+# ===========================================
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files from client directory
+COPY src/client/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy client source code
+COPY src/client/ .
+
+# Build arguments for environment variables
+ARG VITE_API_URL
+ARG VITE_APP_NAME="BodaInsure Admin"
+ARG VITE_SESSION_TIMEOUT=30
+ARG VITE_ENABLE_MOCK_DATA=false
+
+# Set environment variables for build
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_APP_NAME=$VITE_APP_NAME
+ENV VITE_SESSION_TIMEOUT=$VITE_SESSION_TIMEOUT
+ENV VITE_ENABLE_MOCK_DATA=$VITE_ENABLE_MOCK_DATA
+
+# Build the application
+RUN npm run build
+
+# ===========================================
+# STAGE 2: PRODUCTION
+# ===========================================
+FROM nginx:alpine AS production
+
+# Copy nginx configuration
+COPY docker/prod/nginx-client.conf /etc/nginx/nginx.conf
+
+# Copy built static files from builder
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Create non-root user for security
+RUN adduser -D -H -u 1001 -s /sbin/nologin nginx-user && \
+    chown -R nginx-user:nginx-user /usr/share/nginx/html && \
+    chown -R nginx-user:nginx-user /var/cache/nginx && \
+    chown -R nginx-user:nginx-user /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R nginx-user:nginx-user /var/run/nginx.pid
+
+# Switch to non-root user
+USER nginx-user
+
+# Expose port 80
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

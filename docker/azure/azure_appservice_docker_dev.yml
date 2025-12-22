@@ -1,0 +1,281 @@
+# =============================================================================
+# BodaInsure - Azure App Service Docker Deployment (Development)
+# =============================================================================
+# This workflow deploys the BodaInsure platform to Azure App Service
+# using Docker containers with Azure Container Registry.
+#
+# Triggers: Push to develop branch
+#
+# To use: Copy this file to .github/workflows/azure_appservice_docker_dev.yml
+# =============================================================================
+
+name: Deploy to Azure App Service (Docker - Dev)
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'src/server/**'
+      - 'src/client/**'
+      - 'docker/**'
+      - '.github/workflows/azure_appservice_docker_dev.yml'
+  workflow_dispatch:
+    inputs:
+      deploy_server:
+        description: 'Deploy Server'
+        required: true
+        default: true
+        type: boolean
+      deploy_client:
+        description: 'Deploy Client'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+  AZURE_WEBAPP_NAME_API: 'app-bodainsure-api-dev'
+  AZURE_WEBAPP_NAME_CLIENT: 'app-bodainsure-admin-dev'
+  AZURE_RESOURCE_GROUP: 'rg-bodainsure-dev'
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  # ===========================================
+  # BUILD AND TEST
+  # ===========================================
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: |
+            src/server/package-lock.json
+            src/client/package-lock.json
+
+      - name: Install and test server
+        working-directory: src/server
+        run: |
+          npm ci
+          npm run lint
+          npm test
+        env:
+          NODE_ENV: test
+
+      - name: Install and test client
+        working-directory: src/client
+        run: |
+          npm ci
+          npm run lint
+
+  # ===========================================
+  # BUILD AND PUSH SERVER IMAGE
+  # ===========================================
+  build-server:
+    name: Build Server Image
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_server != 'false'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v5
+        with:
+          context: src/server
+          file: docker/prod/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:${{ env.IMAGE_TAG }}
+            ${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:dev-latest
+          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:dev-latest
+          cache-to: type=inline
+
+  # ===========================================
+  # BUILD AND PUSH CLIENT IMAGE
+  # ===========================================
+  build-client:
+    name: Build Client Image
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_client != 'false'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push client image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/prod/Dockerfile.client
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin:${{ env.IMAGE_TAG }}
+            ${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin:dev-latest
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL_DEV }}
+            VITE_APP_NAME=BodaInsure Admin (Dev)
+          cache-from: type=registry,ref=${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin:dev-latest
+          cache-to: type=inline
+
+  # ===========================================
+  # DEPLOY SERVER TO AZURE
+  # ===========================================
+  deploy-server:
+    name: Deploy Server
+    needs: build-server
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_server != 'false'
+    environment:
+      name: development
+      url: https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy container to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME_API }}
+          images: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-api:${{ env.IMAGE_TAG }}
+
+      - name: Health check
+        run: |
+          echo "Waiting for container to start..."
+          sleep 90
+          for i in {1..10}; do
+            response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net/api/v1/health)
+            if [ "$response" = "200" ]; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Attempt $i: Status $response, retrying..."
+            sleep 15
+          done
+          echo "Health check failed after 10 attempts"
+          exit 1
+
+  # ===========================================
+  # DEPLOY CLIENT TO AZURE
+  # ===========================================
+  deploy-client:
+    name: Deploy Client
+    needs: build-client
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_client != 'false'
+    environment:
+      name: development
+      url: https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}.azurewebsites.net
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy container to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME_CLIENT }}
+          images: ${{ env.ACR_LOGIN_SERVER }}/bodainsure-admin:${{ env.IMAGE_TAG }}
+
+      - name: Health check
+        run: |
+          echo "Waiting for container to start..."
+          sleep 60
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}.azurewebsites.net/)
+          if [ "$response" = "200" ]; then
+            echo "Health check passed!"
+          else
+            echo "Health check failed with status: $response"
+            exit 1
+          fi
+
+  # ===========================================
+  # CLEANUP OLD IMAGES
+  # ===========================================
+  cleanup:
+    name: Cleanup Old Images
+    needs: [deploy-server, deploy-client]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Cleanup old images
+        uses: azure/CLI@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            # Keep last 10 images for each repository
+            ACR_NAME=$(echo ${{ env.ACR_LOGIN_SERVER }} | cut -d'.' -f1)
+
+            for repo in bodainsure-api bodainsure-admin; do
+              echo "Cleaning up $repo..."
+              # Get all tags except 'latest' and 'dev-latest', sort by date, keep last 10
+              tags=$(az acr repository show-tags --name $ACR_NAME --repository $repo --orderby time_desc --output tsv | grep -v "latest" | tail -n +11)
+              for tag in $tags; do
+                echo "Deleting $repo:$tag"
+                az acr repository delete --name $ACR_NAME --image $repo:$tag --yes || true
+              done
+            done
+
+  # ===========================================
+  # NOTIFICATION
+  # ===========================================
+  notify:
+    name: Notify
+    needs: [deploy-server, deploy-client]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary (Development - Docker)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | Image | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|-------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Server | ${{ needs.deploy-server.result }} | \`bodainsure-api:${{ env.IMAGE_TAG }}\` | https://${{ env.AZURE_WEBAPP_NAME_API }}.azurewebsites.net |" >> $GITHUB_STEP_SUMMARY
+          echo "| Client | ${{ needs.deploy-client.result }} | \`bodainsure-admin:${{ env.IMAGE_TAG }}\` | https://${{ env.AZURE_WEBAPP_NAME_CLIENT }}.azurewebsites.net |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY

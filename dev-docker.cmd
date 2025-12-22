@@ -1,9 +1,18 @@
 @echo off
-REM BodaInsure Docker Development Environment Script
+REM =============================================================================
+REM BodaInsure Docker Development Environment Script (Windows)
+REM =============================================================================
 REM Usage: dev-docker.cmd [command]
+REM
+REM Environment Configuration:
+REM   All environment files are at the project root:
+REM   - .env.example  (template - committed to git)
+REM   - .env.docker   (Docker development - gitignored)
+REM   - .env.local    (local development - gitignored)
 REM
 REM Commands:
 REM   start     - Start the full development environment (default)
+REM   setup     - Create .env.docker from .env.example (first-time setup)
 REM   stop      - Stop all services
 REM   restart   - Restart all services
 REM   logs      - View logs from all services
@@ -12,10 +21,13 @@ REM   status    - Show status of all containers
 REM   tools     - Start optional development tools
 REM   migrate   - Run database migrations
 REM   shell     - Open shell in server container
+REM =============================================================================
 
 setlocal enabledelayedexpansion
 
 set DOCKER_COMPOSE_FILE=docker/dev/docker-compose.yml
+set ENV_FILE=.env.docker
+set DOCKER_COMPOSE=docker compose -f %DOCKER_COMPOSE_FILE% --env-file %ENV_FILE%
 set COMMAND=%1
 
 if "%COMMAND%"=="" set COMMAND=start
@@ -23,7 +35,8 @@ if "%COMMAND%"=="" set COMMAND=start
 REM Change to project root directory
 cd /d "%~dp0"
 
-if "%COMMAND%"=="start" goto :start
+if "%COMMAND%"=="start" goto :check_env
+if "%COMMAND%"=="setup" goto :setup
 if "%COMMAND%"=="stop" goto :stop
 if "%COMMAND%"=="restart" goto :restart
 if "%COMMAND%"=="logs" goto :logs
@@ -36,6 +49,39 @@ if "%COMMAND%"=="help" goto :help
 
 echo Unknown command: %COMMAND%
 goto :help
+
+:check_env
+if not exist ".env.docker" (
+    echo.
+    echo ERROR: .env.docker not found!
+    echo.
+    echo Run 'dev-docker.cmd setup' to create it from .env.example
+    echo Or manually: copy .env.example .env.docker
+    echo.
+    exit /b 1
+)
+goto :start
+
+:setup
+echo Setting up development environment...
+if exist ".env.docker" (
+    echo   .env.docker already exists. Skipping.
+    echo   To reset, delete .env.docker and run this command again.
+) else (
+    if exist ".env.example" (
+        copy .env.example .env.docker >nul
+        echo   Created .env.docker from .env.example
+        echo.
+        echo   Edit .env.docker if you need to customize settings.
+        echo   Default values work for Docker development.
+    ) else (
+        echo ERROR: .env.example not found!
+        exit /b 1
+    )
+)
+echo.
+echo Setup complete! Run 'dev-docker.cmd start' to start.
+goto :eof
 
 :start
 echo ==========================================
@@ -57,7 +103,7 @@ echo   Docker is ready!
 echo.
 
 echo [2/5] Building Docker images...
-docker compose -f %DOCKER_COMPOSE_FILE% build --parallel
+%DOCKER_COMPOSE% build --parallel
 if errorlevel 1 (
     echo ERROR: Failed to build Docker images
     exit /b 1
@@ -66,7 +112,7 @@ echo   Build complete!
 echo.
 
 echo [3/5] Starting infrastructure services...
-docker compose -f %DOCKER_COMPOSE_FILE% up -d --wait postgres redis minio mailhog minio-init >nul 2>&1
+%DOCKER_COMPOSE% up -d --wait postgres redis minio mailhog minio-init >nul 2>&1
 if errorlevel 1 (
     echo   Infrastructure starting...
     timeout /t 10 /nobreak >nul
@@ -77,9 +123,9 @@ echo.
 
 echo [4/5] Starting application services...
 echo   Starting server (migrations and seeding may take 30-60 seconds on first run)...
-docker compose -f %DOCKER_COMPOSE_FILE% up -d server
+%DOCKER_COMPOSE% up -d server
 echo   Starting client...
-docker compose -f %DOCKER_COMPOSE_FILE% up -d client
+%DOCKER_COMPOSE% up -d client
 echo   Waiting for services to be ready...
 timeout /t 30 /nobreak >nul
 echo.
@@ -114,18 +160,18 @@ goto :eof
 
 :stop
 echo Stopping all services...
-docker compose -f %DOCKER_COMPOSE_FILE% down
+%DOCKER_COMPOSE% down
 echo Services stopped.
 goto :eof
 
 :restart
 echo Restarting all services...
-docker compose -f %DOCKER_COMPOSE_FILE% restart
+%DOCKER_COMPOSE% restart
 echo Services restarted.
 goto :eof
 
 :logs
-docker compose -f %DOCKER_COMPOSE_FILE% logs -f
+%DOCKER_COMPOSE% logs -f
 goto :eof
 
 :clean
@@ -133,18 +179,18 @@ echo WARNING: This will delete all data including the database!
 echo Press Ctrl+C within 5 seconds to cancel...
 timeout /t 5 /nobreak >nul
 echo Cleaning up...
-docker compose -f %DOCKER_COMPOSE_FILE% down -v --remove-orphans
+%DOCKER_COMPOSE% down -v --remove-orphans
 echo Cleanup complete.
 goto :eof
 
 :status
 echo Container Status:
-docker compose -f %DOCKER_COMPOSE_FILE% ps
+%DOCKER_COMPOSE% ps
 goto :eof
 
 :tools
 echo Starting development tools...
-docker compose -f %DOCKER_COMPOSE_FILE% --profile tools up -d
+%DOCKER_COMPOSE% --profile tools up -d
 echo.
 echo Development tools started:
 echo   pgAdmin:         http://localhost:8080 (admin@bodainsure.co.ke / admin123)
@@ -153,21 +199,27 @@ goto :eof
 
 :migrate
 echo Running database migrations...
-docker compose -f %DOCKER_COMPOSE_FILE% exec server npm run migration:run
+%DOCKER_COMPOSE% exec server npm run migration:run
 goto :eof
 
 :shell
-docker compose -f %DOCKER_COMPOSE_FILE% exec server sh
+%DOCKER_COMPOSE% exec server sh
 goto :eof
 
 :help
 echo.
-echo BodaInsure Docker Development Commands
+echo ==========================================
+echo   BodaInsure Docker Development Commands
+echo ==========================================
 echo.
 echo Usage: dev-docker.cmd [command]
 echo.
+echo First-time Setup:
+echo   dev-docker.cmd setup    Create .env.docker from .env.example
+echo.
 echo Commands:
 echo   start     Start the full development environment (default)
+echo   setup     Create .env.docker from .env.example (first-time)
 echo   stop      Stop all services
 echo   restart   Restart all services
 echo   logs      View logs from all services

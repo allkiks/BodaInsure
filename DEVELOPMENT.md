@@ -96,10 +96,16 @@ make dev-docker-clean
 For development without Docker, you'll need to install and run services locally:
 
 ```bash
+# Setup environment (from project root)
+cp .env.example .env.local
+# Edit .env.local - change service hosts from Docker names to localhost:
+#   DB_HOST=localhost (not postgres)
+#   REDIS_HOST=localhost (not redis)
+#   AWS_S3_ENDPOINT=http://localhost:9000 (not minio)
+
 # Backend
 cd src/server
 npm install
-cp .env.example .env
 npm run start:dev
 
 # Web Portal (new terminal)
@@ -228,45 +234,48 @@ cd src/server
 # Install dependencies
 npm install
 
-# Copy environment file
-cp .env.example .env
-
-# Edit .env with your local settings (most defaults work)
+# Environment files are at project root (not in src/server)
+# For Docker: uses ../../.env.docker (already configured)
+# For local:  uses ../../.env.local (copy from .env.example if needed)
 ```
 
 ### 4.2 Environment Variables
 
-Key variables for local development (`.env`):
+Environment configuration is centralized at the **project root**:
+
+```
+bodainsure/
+├── .env.example      # Template (committed to git)
+├── .env.docker       # Docker development (gitignored)
+├── .env.local        # Local development (gitignored)
+└── .env.production   # Production (gitignored)
+```
+
+**For Docker development**: Use `.env.docker` (pre-configured with Docker service names)
+
+**For local development**: Use `.env.local` with localhost values:
 
 ```bash
-# Minimal configuration for local dev
-NODE_ENV=development
-PORT=3000
-API_PREFIX=api/v1
+# Key differences in .env.local vs .env.docker:
+DB_HOST=localhost           # (not 'postgres')
+REDIS_HOST=localhost        # (not 'redis')
+SMTP_HOST=localhost         # (not 'mailhog')
+AWS_S3_ENDPOINT=http://localhost:9000  # (not 'http://minio:9000')
+DOCKER_ENV=false            # (not 'true')
 
-# Database (use Docker or local PostgreSQL)
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=bodainsure
-DB_PASSWORD=bodainsure
-DB_NAME=bodainsure
-DB_LOGGING=true
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# JWT (dev keys auto-generated if not set)
-JWT_SECRET=dev-secret-key
-
-# Disable external services for local dev
+# External services disabled by default for local dev
 MPESA_ENABLED=false
 SMS_ENABLED=false
 WHATSAPP_ENABLED=false
 EMAIL_ENABLED=false
 USSD_ENABLED=false
-SCHEDULER_ENABLED=false
 ```
+
+The server's ConfigModule loads environment files in this priority order:
+1. `../../.env.local` (root local config)
+2. `../../.env.docker` (root Docker config)
+3. `.env.local` (server directory override)
+4. `.env` (server directory fallback)
 
 ### 4.3 Running the Server
 
@@ -353,8 +362,10 @@ cd src/client
 # Install dependencies
 npm install
 
-# Create environment file
-echo "VITE_API_URL=http://localhost:3000/api/v1" > .env.local
+# Environment variables are in the root .env.docker or .env.local
+# VITE_* variables are already configured there:
+#   VITE_API_URL=http://localhost:3000/api/v1
+#   VITE_APP_NAME=BodaInsure Admin
 ```
 
 ### 5.2 Running the Development Server
@@ -577,6 +588,14 @@ eas build --platform android --profile development
 ### 7.1 Using Docker (Recommended)
 
 When using `make dev-docker`, the database is automatically set up and migrations are run. No additional setup is needed.
+
+**Environment Configuration**: Docker Compose uses the root `.env.docker` file:
+
+```bash
+# The docker-compose.yml references:
+env_file:
+  - ../../.env.docker
+```
 
 For infrastructure-only setup:
 
