@@ -59,8 +59,17 @@ export class AuthService {
   ) {}
 
   /**
+   * Default password for admin-created users when SMS is unavailable
+   */
+  private readonly DEFAULT_PASSWORD = 'ChangeMe123!';
+  private readonly SALT_ROUNDS = 10;
+
+  /**
    * Register a new user
    * Per FEAT-AUTH-001
+   *
+   * If useDefaultPassword is true, creates user with default password (ChangeMe123!)
+   * and skips OTP verification. Used for admin-created users when SMS is unavailable.
    */
   async register(
     dto: RegisterDto,
@@ -77,7 +86,7 @@ export class AuthService {
     // Check if phone already registered
     const existingUser = await this.userService.findByPhone(normalizedPhone);
     if (existingUser) {
-      if (existingUser.status === UserStatus.PENDING) {
+      if (existingUser.status === UserStatus.PENDING && !dto.useDefaultPassword) {
         // User exists but not verified - resend OTP
         const otpResult = await this.otpService.generateOtp(
           normalizedPhone,
@@ -113,12 +122,35 @@ export class AuthService {
       };
     }
 
-    // Create new user
+    // If using default password, hash it
+    let passwordHash: string | undefined;
+    if (dto.useDefaultPassword) {
+      passwordHash = await bcrypt.hash(this.DEFAULT_PASSWORD, this.SALT_ROUNDS);
+    }
+
+    // Create new user with organization
+    // GAP-004: All riders must belong to a SACCO
     const user = await this.userService.createUser({
       phone: normalizedPhone,
       language: dto.language ?? Language.ENGLISH,
       termsAccepted: dto.termsAccepted,
+      organizationId: dto.organizationId,
+      role: dto.role,
+      passwordHash,
     });
+
+    // If using default password, skip OTP and return success
+    if (dto.useDefaultPassword) {
+      this.logger.log(
+        `User created with default password: ***${normalizedPhone.slice(-4)} role=${dto.role ?? 'rider'}`,
+      );
+      return {
+        status: 'SUCCESS',
+        userId: user.id,
+        otpSent: false,
+        message: `User created with default password: ${this.DEFAULT_PASSWORD}`,
+      };
+    }
 
     // Generate and send OTP
     const otpResult = await this.otpService.generateOtp(

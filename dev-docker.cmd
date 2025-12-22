@@ -66,20 +66,22 @@ echo   Build complete!
 echo.
 
 echo [3/5] Starting infrastructure services...
-docker compose -f %DOCKER_COMPOSE_FILE% up -d postgres redis minio mailhog
-docker compose -f %DOCKER_COMPOSE_FILE% up -d minio-init
-echo   Waiting for infrastructure to be healthy...
-timeout /t 10 /nobreak >nul
-echo   Infrastructure ready!
+docker compose -f %DOCKER_COMPOSE_FILE% up -d --wait postgres redis minio mailhog minio-init >nul 2>&1
+if errorlevel 1 (
+    echo   Infrastructure starting...
+    timeout /t 10 /nobreak >nul
+) else (
+    echo   Infrastructure ready!
+)
 echo.
 
 echo [4/5] Starting application services...
+echo   Starting server (migrations and seeding may take 30-60 seconds on first run)...
 docker compose -f %DOCKER_COMPOSE_FILE% up -d server
-echo   Waiting for server to start (running migrations)...
-timeout /t 30 /nobreak >nul
+echo   Starting client...
 docker compose -f %DOCKER_COMPOSE_FILE% up -d client
-echo   Waiting for client to start...
-timeout /t 15 /nobreak >nul
+echo   Waiting for services to be ready...
+timeout /t 30 /nobreak >nul
 echo.
 
 echo [5/5] Environment Ready!

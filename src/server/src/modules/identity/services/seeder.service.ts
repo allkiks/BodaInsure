@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -13,6 +9,14 @@ import {
   KycStatus,
   Language,
 } from '../entities/user.entity.js';
+import {
+  DEFAULT_PASSWORD,
+  SALT_ROUNDS,
+  SUPERUSER_CONFIG,
+  ROLE_PHONE_OFFSETS,
+  BASE_PHONE_NUMBER,
+  COUNTRY_CODE,
+} from '../../../database/seeds/index.js';
 
 /**
  * Seeded User Information
@@ -27,11 +31,26 @@ export interface SeededUserInfo {
 }
 
 /**
+ * Seeding result from user seeder
+ */
+export interface UserSeedingResult {
+  success: boolean;
+  seededCount: number;
+  createdCount: number;
+  restoredCount: number;
+  existingCount: number;
+  users: SeededUserInfo[];
+  error?: string;
+}
+
+/**
  * Seeder Service
  *
- * Handles seeding of essential data on application startup:
+ * Handles seeding of essential user data:
  * - Default SUPERUSER account (system admin)
  * - One default user per role with deterministic phone numbers
+ *
+ * Seed data is sourced from: src/database/seeds/users.seed.ts
  *
  * Phone Number Assignment:
  * - SUPERUSER: +254000000000 (system account)
@@ -41,35 +60,14 @@ export interface SeededUserInfo {
  * - INSURANCE_ADMIN: +254722000003
  * - PLATFORM_ADMIN: +254722000004
  *
- * All seeded users have the default password: ChangeMe123!
+ * All seeded users have the default password from seed data.
  *
- * This service implements OnModuleInit to run automatically on startup.
+ * This service is called by SeedingRunnerService after migrations complete.
  * All seeding operations are idempotent - safe to run multiple times.
  */
 @Injectable()
-export class SeederService implements OnModuleInit {
+export class SeederService {
   private readonly logger = new Logger(SeederService.name);
-
-  // Default credentials
-  private readonly DEFAULT_PASSWORD = 'ChangeMe123!';
-  private readonly SALT_ROUNDS = 10;
-
-  // SUPERUSER specific settings (system account)
-  private readonly SUPERUSER_USERNAME = 'SUPERUSER';
-  private readonly SUPERUSER_PHONE = '+254000000000';
-
-  // Base phone number for role-based seeding (0722000000)
-  private readonly BASE_PHONE_NUMBER = 722000000;
-  private readonly COUNTRY_CODE = '+254';
-
-  // Role to phone number offset mapping (deterministic assignment)
-  private readonly ROLE_PHONE_OFFSETS: Record<UserRole, number> = {
-    [UserRole.RIDER]: 0,
-    [UserRole.SACCO_ADMIN]: 1,
-    [UserRole.KBA_ADMIN]: 2,
-    [UserRole.INSURANCE_ADMIN]: 3,
-    [UserRole.PLATFORM_ADMIN]: 4,
-  };
 
   // Track seeded users for display
   private seededUsers: SeededUserInfo[] = [];
@@ -80,10 +78,11 @@ export class SeederService implements OnModuleInit {
   ) {}
 
   /**
-   * Runs on module initialization (application startup)
+   * Run user seeding
+   * Called by SeedingRunnerService
    */
-  async onModuleInit(): Promise<void> {
-    this.logger.log('Starting database seeding...');
+  async seed(): Promise<UserSeedingResult> {
+    this.logger.log('Starting user seeding...');
     this.seededUsers = [];
 
     try {
@@ -96,11 +95,32 @@ export class SeederService implements OnModuleInit {
       // Display seed results
       this.displaySeedResults();
 
-      this.logger.log('Database seeding completed successfully');
+      const createdCount = this.seededUsers.filter(u => u.created).length;
+      const restoredCount = this.seededUsers.filter(u => u.restored).length;
+      const existingCount = this.seededUsers.filter(u => !u.created && !u.restored).length;
+
+      this.logger.log('User seeding completed successfully');
+
+      return {
+        success: true,
+        seededCount: this.seededUsers.length,
+        createdCount,
+        restoredCount,
+        existingCount,
+        users: [...this.seededUsers],
+      };
     } catch (error) {
-      this.logger.error('Database seeding failed', error);
-      // Don't throw - allow application to start even if seeding fails
-      // The SUPERUSER can be created manually if needed
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error('User seeding failed', error);
+      return {
+        success: false,
+        seededCount: 0,
+        createdCount: 0,
+        restoredCount: 0,
+        existingCount: 0,
+        users: [],
+        error: errorMessage,
+      };
     }
   }
 
@@ -112,7 +132,7 @@ export class SeederService implements OnModuleInit {
   private async seedSuperuser(): Promise<void> {
     // Check if SUPERUSER already exists
     const existingUser = await this.userRepository.findOne({
-      where: { username: this.SUPERUSER_USERNAME },
+      where: { username: SUPERUSER_CONFIG.username },
       withDeleted: true, // Include soft-deleted records
     });
 
@@ -126,8 +146,8 @@ export class SeederService implements OnModuleInit {
 
         this.seededUsers.push({
           role: UserRole.PLATFORM_ADMIN,
-          username: this.SUPERUSER_USERNAME,
-          phone: this.SUPERUSER_PHONE,
+          username: SUPERUSER_CONFIG.username,
+          phone: SUPERUSER_CONFIG.phone,
           created: false,
           restored: true,
         });
@@ -137,8 +157,8 @@ export class SeederService implements OnModuleInit {
       // Already exists, track it for display
       this.seededUsers.push({
         role: UserRole.PLATFORM_ADMIN,
-        username: this.SUPERUSER_USERNAME,
-        phone: this.SUPERUSER_PHONE,
+        username: SUPERUSER_CONFIG.username,
+        phone: SUPERUSER_CONFIG.phone,
         created: false,
         restored: false,
       });
@@ -146,30 +166,30 @@ export class SeederService implements OnModuleInit {
     }
 
     // Hash the default password
-    const passwordHash = await bcrypt.hash(this.DEFAULT_PASSWORD, this.SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
 
     // Create the SUPERUSER account
     const superuser = this.userRepository.create({
-      phone: this.SUPERUSER_PHONE,
-      username: this.SUPERUSER_USERNAME,
+      phone: SUPERUSER_CONFIG.phone,
+      username: SUPERUSER_CONFIG.username,
       passwordHash,
-      role: UserRole.PLATFORM_ADMIN,
+      role: SUPERUSER_CONFIG.role,
       status: UserStatus.ACTIVE,
       kycStatus: KycStatus.APPROVED,
       language: Language.ENGLISH,
-      isSystemAccount: true,
+      isSystemAccount: SUPERUSER_CONFIG.isSystemAccount,
       termsAcceptedAt: new Date(),
       consentGivenAt: new Date(),
       failedLoginAttempts: 0,
-      reminderOptOut: true, // System account doesn't need reminders
+      reminderOptOut: SUPERUSER_CONFIG.reminderOptOut,
     });
 
     await this.userRepository.save(superuser);
 
     this.seededUsers.push({
       role: UserRole.PLATFORM_ADMIN,
-      username: this.SUPERUSER_USERNAME,
-      phone: this.SUPERUSER_PHONE,
+      username: SUPERUSER_CONFIG.username,
+      phone: SUPERUSER_CONFIG.phone,
       created: true,
       restored: false,
     });
@@ -192,9 +212,9 @@ export class SeederService implements OnModuleInit {
    * Uses deterministic phone number based on role offset
    */
   private async seedUserForRole(role: UserRole): Promise<void> {
-    const offset = this.ROLE_PHONE_OFFSETS[role];
-    const phoneNumber = this.BASE_PHONE_NUMBER + offset;
-    const phone = `${this.COUNTRY_CODE}${phoneNumber}`;
+    const offset = ROLE_PHONE_OFFSETS[role];
+    const phoneNumber = BASE_PHONE_NUMBER + offset;
+    const phone = `${COUNTRY_CODE}${phoneNumber}`;
     const username = `0${phoneNumber}`; // Local format as username (e.g., 0722000000)
 
     // Check if user already exists by phone
@@ -233,7 +253,11 @@ export class SeederService implements OnModuleInit {
     }
 
     // Hash the default password
-    const passwordHash = await bcrypt.hash(this.DEFAULT_PASSWORD, this.SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
+
+    // Riders must start with PENDING KYC status (no documents uploaded yet)
+    // Admin roles (platform_admin, kba_admin, sacco_admin, insurance_admin) don't require KYC
+    const kycStatus = role === UserRole.RIDER ? KycStatus.PENDING : KycStatus.APPROVED;
 
     // Create the user
     const user = this.userRepository.create({
@@ -242,7 +266,7 @@ export class SeederService implements OnModuleInit {
       passwordHash,
       role,
       status: UserStatus.ACTIVE,
-      kycStatus: KycStatus.APPROVED,
+      kycStatus,
       language: Language.ENGLISH,
       isSystemAccount: false,
       termsAcceptedAt: new Date(),
@@ -283,7 +307,7 @@ export class SeederService implements OnModuleInit {
     }
 
     this.logger.log('╠══════════════════════════════════════════════════════════════════════════════╣');
-    this.logger.log(`║  Default Password: ${this.DEFAULT_PASSWORD.padEnd(57)}║`);
+    this.logger.log(`║  Default Password: ${DEFAULT_PASSWORD.padEnd(57)}║`);
     this.logger.log('╚══════════════════════════════════════════════════════════════════════════════╝');
     this.logger.log('');
 
@@ -302,7 +326,7 @@ export class SeederService implements OnModuleInit {
    */
   async ensureSuperuserExists(): Promise<{ created: boolean; message: string }> {
     const existingUser = await this.userRepository.findOne({
-      where: { username: this.SUPERUSER_USERNAME },
+      where: { username: SUPERUSER_CONFIG.username },
     });
 
     if (existingUser) {
@@ -325,7 +349,7 @@ export class SeederService implements OnModuleInit {
    */
   async resetSuperuserPassword(): Promise<{ success: boolean; message: string }> {
     const superuser = await this.userRepository.findOne({
-      where: { username: this.SUPERUSER_USERNAME },
+      where: { username: SUPERUSER_CONFIG.username },
     });
 
     if (!superuser) {
@@ -335,7 +359,7 @@ export class SeederService implements OnModuleInit {
       };
     }
 
-    superuser.passwordHash = await bcrypt.hash(this.DEFAULT_PASSWORD, this.SALT_ROUNDS);
+    superuser.passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
     superuser.failedLoginAttempts = 0;
     superuser.lockedUntil = undefined;
     superuser.status = UserStatus.ACTIVE;
@@ -360,6 +384,6 @@ export class SeederService implements OnModuleInit {
    * Gets the default password (for testing/documentation purposes)
    */
   getDefaultPassword(): string {
-    return this.DEFAULT_PASSWORD;
+    return DEFAULT_PASSWORD;
   }
 }

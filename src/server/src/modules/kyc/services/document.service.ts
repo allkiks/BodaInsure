@@ -4,9 +4,11 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
+import type { ICurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import * as crypto from 'crypto';
 import {
   Document,
@@ -74,7 +76,67 @@ export class DocumentService {
     @InjectRepository(KycValidation)
     private readonly validationRepository: Repository<KycValidation>,
     private readonly storageService: StorageService,
+    private readonly dataSource: DataSource,
   ) {}
+
+  /**
+   * Get user IDs that the current user can access based on their role
+   * GAP-004: Role-based scoping for KYC access
+   */
+  private async getAccessibleUserIds(user: ICurrentUser): Promise<string[] | null> {
+    if (user.role === 'platform_admin' || user.role === 'insurance_admin') {
+      // Full access - return null to indicate no filtering needed
+      return null;
+    }
+
+    if (user.role === 'sacco_admin') {
+      // SACCO admin can only access users in their own organization
+      if (!user.organizationId) {
+        return []; // No organization = no access
+      }
+
+      const result = await this.dataSource.query(
+        `SELECT user_id FROM memberships
+         WHERE organization_id = $1 AND status = 'ACTIVE'`,
+        [user.organizationId],
+      );
+      return result.map((r: { user_id: string }) => r.user_id);
+    }
+
+    if (user.role === 'kba_admin') {
+      // KBA admin can access users in their org and child SACCOs
+      if (!user.organizationId) {
+        return [];
+      }
+
+      const result = await this.dataSource.query(
+        `SELECT DISTINCT m.user_id FROM memberships m
+         JOIN organizations o ON o.id = m.organization_id
+         WHERE (m.organization_id = $1 OR o.parent_id = $1)
+           AND m.status = 'ACTIVE'`,
+        [user.organizationId],
+      );
+      return result.map((r: { user_id: string }) => r.user_id);
+    }
+
+    // Riders and unknown roles - no admin access
+    return [];
+  }
+
+  /**
+   * Check if user can access a specific document
+   * GAP-004: Role-based access control for documents
+   */
+  private async canAccessDocument(user: ICurrentUser, document: Document): Promise<boolean> {
+    const accessibleUserIds = await this.getAccessibleUserIds(user);
+
+    // null means full access (platform_admin, insurance_admin)
+    if (accessibleUserIds === null) {
+      return true;
+    }
+
+    return accessibleUserIds.includes(document.userId);
+  }
 
   /**
    * Upload a new document
@@ -232,11 +294,26 @@ export class DocumentService {
 
   /**
    * Get a specific document by ID
+   * GAP-004: Optional user parameter for role-based access control
    */
-  async getDocumentById(documentId: string): Promise<Document | null> {
-    return this.documentRepository.findOne({
+  async getDocumentById(documentId: string, user?: ICurrentUser): Promise<Document | null> {
+    const document = await this.documentRepository.findOne({
       where: { id: documentId },
     });
+
+    if (!document) {
+      return null;
+    }
+
+    // If user is provided, check access permissions
+    if (user) {
+      const canAccess = await this.canAccessDocument(user, document);
+      if (!canAccess) {
+        throw new ForbiddenException('You do not have access to this document');
+      }
+    }
+
+    return document;
   }
 
   /**
@@ -310,10 +387,11 @@ export class DocumentService {
 
   /**
    * Review a document (admin action)
+   * GAP-004: Enforce role-based access - admins can only review documents in their scope
    */
   async reviewDocument(
     documentId: string,
-    reviewerId: string,
+    reviewer: ICurrentUser,
     status: DocumentStatus.APPROVED | DocumentStatus.REJECTED,
     rejectionReason?: string,
     reviewerNotes?: string,
@@ -326,6 +404,12 @@ export class DocumentService {
       throw new NotFoundException('Document not found');
     }
 
+    // GAP-004: Check if reviewer has access to this document
+    const canAccess = await this.canAccessDocument(reviewer, document);
+    if (!canAccess) {
+      throw new ForbiddenException('You do not have access to review this document');
+    }
+
     if (document.status === DocumentStatus.APPROVED) {
       throw new ConflictException('Document is already approved');
     }
@@ -335,7 +419,7 @@ export class DocumentService {
     }
 
     document.status = status;
-    document.reviewedBy = reviewerId;
+    document.reviewedBy = reviewer.userId;
     document.reviewedAt = new Date();
     document.reviewerNotes = reviewerNotes;
 
@@ -352,12 +436,12 @@ export class DocumentService {
       result: status === DocumentStatus.APPROVED ? ValidationResult.PASS : ValidationResult.FAIL,
       message: rejectionReason,
       isAutomated: false,
-      validatedBy: reviewerId,
+      validatedBy: reviewer.userId,
     });
     await this.validationRepository.save(validation);
 
     this.logger.log(
-      `Document reviewed: ${documentId.slice(0, 8)}... status=${status} by=${reviewerId.slice(0, 8)}...`,
+      `Document reviewed: ${documentId.slice(0, 8)}... status=${status} by=${reviewer.userId.slice(0, 8)}...`,
     );
 
     return document;
@@ -365,12 +449,14 @@ export class DocumentService {
 
   /**
    * Get documents pending review
+   * GAP-004: Filter by user's accessible scope based on role
    */
   async getPendingDocuments(options: {
     documentType?: DocumentType;
     userId?: string;
     page?: number;
     limit?: number;
+    user?: ICurrentUser;
   }): Promise<{ documents: Document[]; total: number }> {
     const page = options.page ?? 1;
     const limit = options.limit ?? 20;
@@ -381,6 +467,21 @@ export class DocumentService {
         statuses: [DocumentStatus.PENDING, DocumentStatus.IN_REVIEW],
       })
       .andWhere('doc.is_current = :isCurrent', { isCurrent: true });
+
+    // GAP-004: Apply role-based filtering
+    if (options.user) {
+      const accessibleUserIds = await this.getAccessibleUserIds(options.user);
+      if (accessibleUserIds !== null) {
+        if (accessibleUserIds.length === 0) {
+          // No accessible users - return empty
+          return { documents: [], total: 0 };
+        }
+        queryBuilder.andWhere('doc.user_id IN (:...accessibleUserIds)', {
+          accessibleUserIds,
+        });
+      }
+      // null means full access, no filter needed
+    }
 
     if (options.documentType) {
       queryBuilder.andWhere('doc.document_type = :documentType', {
@@ -477,8 +578,9 @@ export class DocumentService {
 
   /**
    * Get queue statistics for admin dashboard
+   * GAP-004: Filter stats by user's accessible scope based on role
    */
-  async getQueueStats(): Promise<{
+  async getQueueStats(user?: ICurrentUser): Promise<{
     pending: number;
     approvedToday: number;
     rejectedToday: number;
@@ -487,38 +589,73 @@ export class DocumentService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Count pending documents
-    const pending = await this.documentRepository.count({
-      where: [
-        { status: DocumentStatus.PENDING, isCurrent: true },
-        { status: DocumentStatus.IN_REVIEW, isCurrent: true },
-      ],
-    });
+    // Get accessible user IDs for role-based filtering
+    let accessibleUserIds: string[] | null = null;
+    if (user) {
+      accessibleUserIds = await this.getAccessibleUserIds(user);
+      if (accessibleUserIds !== null && accessibleUserIds.length === 0) {
+        // No accessible users - return zeros
+        return {
+          pending: 0,
+          approvedToday: 0,
+          rejectedToday: 0,
+          averageProcessingTime: 0,
+        };
+      }
+    }
+
+    // Build base query for pending documents
+    const pendingQuery = this.documentRepository
+      .createQueryBuilder('doc')
+      .where('doc.status IN (:...statuses)', {
+        statuses: [DocumentStatus.PENDING, DocumentStatus.IN_REVIEW],
+      })
+      .andWhere('doc.is_current = :isCurrent', { isCurrent: true });
+
+    if (accessibleUserIds !== null) {
+      pendingQuery.andWhere('doc.user_id IN (:...accessibleUserIds)', { accessibleUserIds });
+    }
+
+    const pending = await pendingQuery.getCount();
 
     // Count approved today
-    const approvedToday = await this.documentRepository
+    const approvedQuery = this.documentRepository
       .createQueryBuilder('doc')
       .where('doc.status = :status', { status: DocumentStatus.APPROVED })
-      .andWhere('doc.reviewed_at >= :today', { today })
-      .getCount();
+      .andWhere('doc.reviewed_at >= :today', { today });
+
+    if (accessibleUserIds !== null) {
+      approvedQuery.andWhere('doc.user_id IN (:...accessibleUserIds)', { accessibleUserIds });
+    }
+
+    const approvedToday = await approvedQuery.getCount();
 
     // Count rejected today
-    const rejectedToday = await this.documentRepository
+    const rejectedQuery = this.documentRepository
       .createQueryBuilder('doc')
       .where('doc.status = :status', { status: DocumentStatus.REJECTED })
-      .andWhere('doc.reviewed_at >= :today', { today })
-      .getCount();
+      .andWhere('doc.reviewed_at >= :today', { today });
+
+    if (accessibleUserIds !== null) {
+      rejectedQuery.andWhere('doc.user_id IN (:...accessibleUserIds)', { accessibleUserIds });
+    }
+
+    const rejectedToday = await rejectedQuery.getCount();
 
     // Calculate average processing time (in minutes)
-    const avgResult = await this.documentRepository
+    const avgQuery = this.documentRepository
       .createQueryBuilder('doc')
       .select('AVG(EXTRACT(EPOCH FROM (doc.reviewed_at - doc.created_at)) / 60)', 'avgMinutes')
       .where('doc.reviewed_at IS NOT NULL')
       .andWhere('doc.reviewed_at >= :thirtyDaysAgo', {
         thirtyDaysAgo: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-      })
-      .getRawOne();
+      });
 
+    if (accessibleUserIds !== null) {
+      avgQuery.andWhere('doc.user_id IN (:...accessibleUserIds)', { accessibleUserIds });
+    }
+
+    const avgResult = await avgQuery.getRawOne();
     const averageProcessingTime = Math.round(avgResult?.avgMinutes ?? 0);
 
     return {

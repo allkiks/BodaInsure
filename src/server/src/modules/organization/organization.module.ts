@@ -20,6 +20,7 @@ import { GeographyController } from './controllers/geography.controller.js';
 
 // Modules
 import { IdentityModule } from '../identity/identity.module.js';
+import { CommonModule } from '../../common/common.module.js';
 
 /**
  * Organization Module
@@ -31,6 +32,7 @@ import { IdentityModule } from '../identity/identity.module.js';
   imports: [
     TypeOrmModule.forFeature([Organization, Membership, Geography, User]),
     forwardRef(() => IdentityModule),
+    CommonModule,
   ],
   controllers: [
     OrganizationController,

@@ -18,7 +18,7 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../identity/guards/jwt-auth.guard.js';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../../../common/guards/roles.guard.js';
 import { Roles } from '../../../common/decorators/roles.decorator.js';
 import {
@@ -88,7 +88,7 @@ export class BreachController {
   ) {}
 
   @Post()
-  @Roles('admin', 'dpo', 'security')
+  @Roles('platform_admin')
   @ApiOperation({ summary: 'Create a new breach incident' })
   @ApiResponse({ status: 201, description: 'Incident created' })
   async createIncident(@Body() dto: CreateBreachIncidentDto) {
@@ -108,7 +108,7 @@ export class BreachController {
   }
 
   @Get()
-  @Roles('admin', 'dpo', 'security')
+  @Roles('platform_admin')
   @ApiOperation({ summary: 'List breach incidents' })
   @ApiQuery({ name: 'status', required: false, enum: BreachStatus, isArray: true })
   @ApiQuery({ name: 'severity', required: false, enum: BreachSeverity, isArray: true })
@@ -158,7 +158,7 @@ export class BreachController {
   }
 
   @Get('overdue')
-  @Roles('admin', 'dpo', 'security')
+  @Roles('platform_admin')
   @ApiOperation({ summary: 'Get incidents past 72-hour notification deadline' })
   async getOverdueIncidents() {
     const incidents = await this.breachNotificationService.getOverdueIncidents();
@@ -177,7 +177,7 @@ export class BreachController {
   }
 
   @Get('approaching-deadline')
-  @Roles('admin', 'dpo', 'security')
+  @Roles('platform_admin')
   @ApiOperation({ summary: 'Get incidents approaching 72-hour deadline' })
   async getApproachingDeadline() {
     const incidents =
@@ -197,7 +197,7 @@ export class BreachController {
   }
 
   @Get(':id')
-  @Roles('admin', 'dpo', 'security')
+  @Roles('platform_admin')
   @ApiOperation({ summary: 'Get breach incident details' })
   @ApiResponse({ status: 200, description: 'Incident details' })
   @ApiResponse({ status: 404, description: 'Incident not found' })
@@ -218,7 +218,7 @@ export class BreachController {
   }
 
   @Put(':id')
-  @Roles('admin', 'dpo', 'security')
+  @Roles('platform_admin')
   @ApiOperation({ summary: 'Update breach incident' })
   async updateIncident(
     @Param('id', ParseUUIDPipe) id: string,
@@ -241,7 +241,7 @@ export class BreachController {
   }
 
   @Post(':id/notify-commissioner')
-  @Roles('admin', 'dpo')
+  @Roles('platform_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Send notification to Data Commissioner (ODPC Kenya)',
@@ -257,7 +257,7 @@ export class BreachController {
   }
 
   @Post(':id/notify-users')
-  @Roles('admin', 'dpo')
+  @Roles('platform_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Notify affected users' })
   @ApiResponse({ status: 200, description: 'Users notified' })
@@ -278,7 +278,7 @@ export class BreachController {
   }
 
   @Post(':id/notify-management')
-  @Roles('admin', 'dpo', 'security')
+  @Roles('platform_admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send alert to management team' })
   async notifyManagement(@Param('id', ParseUUIDPipe) id: string) {

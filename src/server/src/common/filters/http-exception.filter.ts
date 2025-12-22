@@ -53,10 +53,33 @@ export class HttpExceptionFilter implements ExceptionFilter {
         const responseMessage = responseObj['message'];
 
         if (Array.isArray(responseMessage)) {
-          details = responseMessage.map((msg: unknown) => ({
-            field: 'unknown',
-            message: String(msg),
-          }));
+          // GAP-003: Parse NestJS ValidationError structure to extract field names
+          details = responseMessage.map((msg: unknown) => {
+            // Check if this is a NestJS ValidationError object
+            if (typeof msg === 'object' && msg !== null) {
+              const validationError = msg as Record<string, unknown>;
+
+              // NestJS ValidationError has 'property' and 'constraints' fields
+              if (validationError['property'] && validationError['constraints']) {
+                const property = String(validationError['property']);
+                const constraints = validationError['constraints'] as Record<string, string>;
+                // Get the first constraint message
+                const constraintMessages = Object.values(constraints);
+                const errorMessage = constraintMessages[0] || 'Validation failed';
+
+                return {
+                  field: property,
+                  message: errorMessage,
+                };
+              }
+            }
+
+            // Fallback for simple string messages
+            return {
+              field: 'unknown',
+              message: String(msg),
+            };
+          });
           message = 'Validation failed';
         } else if (typeof responseMessage === 'string') {
           message = responseMessage;

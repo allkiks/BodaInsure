@@ -4,13 +4,15 @@ import {
   IsBoolean,
   IsEnum,
   IsOptional,
+  IsUUID,
   Matches,
 } from 'class-validator';
-import { Language } from '../entities/user.entity.js';
+import { Language, UserRole } from '../entities/user.entity.js';
 
 /**
  * Registration Request DTO
  * Per FEAT-AUTH-001 Phone Number Registration
+ * GAP-004: All riders must belong to a SACCO organization
  */
 export class RegisterDto {
   @ApiProperty({
@@ -31,6 +33,13 @@ export class RegisterDto {
   termsAccepted!: boolean;
 
   @ApiProperty({
+    description: 'Organization (SACCO) ID the rider belongs to',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+  })
+  @IsUUID()
+  organizationId!: string;
+
+  @ApiProperty({
     description: 'Preferred language',
     enum: Language,
     default: Language.ENGLISH,
@@ -39,6 +48,25 @@ export class RegisterDto {
   @IsOptional()
   @IsEnum(Language)
   language?: Language;
+
+  @ApiProperty({
+    description: 'User role (defaults to rider)',
+    enum: UserRole,
+    default: UserRole.RIDER,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
+
+  @ApiProperty({
+    description: 'Skip OTP and use default password (for admin-created users when SMS is unavailable)',
+    default: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  useDefaultPassword?: boolean;
 }
 
 /**

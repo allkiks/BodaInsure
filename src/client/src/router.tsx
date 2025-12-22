@@ -7,6 +7,7 @@ import type { UserRole } from '@/types';
 
 // Lazy load pages for code splitting
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
+const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'));
 const AdminLoginPage = lazy(() => import('@/pages/auth/AdminLoginPage'));
 const OtpVerifyPage = lazy(() => import('@/pages/auth/OtpVerifyPage'));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
@@ -124,6 +125,14 @@ export function AppRouter() {
           }
         />
         <Route
+          path="/register"
+          element={
+            <PublicRoute>
+              <RegisterPage />
+            </PublicRoute>
+          }
+        />
+        <Route
           path="/admin/login"
           element={
             <PublicRoute>
@@ -208,12 +217,12 @@ export function AppRouter() {
             </ProtectedRoute>
           } />
           <Route path="kyc" element={
-            <ProtectedRoute allowedRoles={['platform_admin']}>
+            <ProtectedRoute allowedRoles={['platform_admin', 'kba_admin', 'sacco_admin']}>
               <KycQueuePage />
             </ProtectedRoute>
           } />
           <Route path="kyc/:id" element={
-            <ProtectedRoute allowedRoles={['platform_admin']}>
+            <ProtectedRoute allowedRoles={['platform_admin', 'kba_admin', 'sacco_admin']}>
               <KycReviewPage />
             </ProtectedRoute>
           } />

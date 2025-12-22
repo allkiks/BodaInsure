@@ -5,6 +5,9 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * This migration creates all tables required for the BodaInsure platform.
  * Tables follow the module structure defined in CLAUDE.md Section 4.3.
+ *
+ * IDEMPOTENT: All operations use IF NOT EXISTS / IF EXISTS patterns.
+ * Safe to run multiple times.
  */
 export class InitialSchema1734200000000 implements MigrationInterface {
   name = 'InitialSchema1734200000000';
@@ -19,7 +22,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Users table
     await queryRunner.query(`
-      CREATE TABLE "users" (
+      CREATE TABLE IF NOT EXISTS "users" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "phone" varchar(20) NOT NULL,
         "phone_hash" varchar(64),
@@ -46,16 +49,16 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_users_phone" ON "users" ("phone")`);
-    await queryRunner.query(`CREATE INDEX "IDX_users_phone_hash" ON "users" ("phone_hash")`);
-    await queryRunner.query(`CREATE INDEX "IDX_users_kyc_status" ON "users" ("kyc_status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_users_role" ON "users" ("role")`);
-    await queryRunner.query(`CREATE INDEX "IDX_users_organization" ON "users" ("organization_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_users_created_at" ON "users" ("created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_phone" ON "users" ("phone")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_phone_hash" ON "users" ("phone_hash")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_kyc_status" ON "users" ("kyc_status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_role" ON "users" ("role")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_organization" ON "users" ("organization_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_created_at" ON "users" ("created_at")`);
 
     // OTPs table
     await queryRunner.query(`
-      CREATE TABLE "otps" (
+      CREATE TABLE IF NOT EXISTS "otps" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "phone" varchar(20) NOT NULL,
         "code" varchar(6) NOT NULL,
@@ -68,12 +71,12 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_otps_phone" ON "otps" ("phone")`);
-    await queryRunner.query(`CREATE INDEX "IDX_otps_expires_at" ON "otps" ("expires_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_otps_phone" ON "otps" ("phone")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_otps_expires_at" ON "otps" ("expires_at")`);
 
     // Sessions table
     await queryRunner.query(`
-      CREATE TABLE "sessions" (
+      CREATE TABLE IF NOT EXISTS "sessions" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "token_hash" varchar(64) NOT NULL,
@@ -89,8 +92,8 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_sessions_user" ON "sessions" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_sessions_token" ON "sessions" ("token_hash")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_sessions_user" ON "sessions" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_sessions_token" ON "sessions" ("token_hash")`);
 
     // ============================================
     // ORGANIZATION MODULE TABLES
@@ -98,7 +101,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Organizations table
     await queryRunner.query(`
-      CREATE TABLE "organizations" (
+      CREATE TABLE IF NOT EXISTS "organizations" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "name" varchar(255) NOT NULL,
         "type" varchar(50) NOT NULL,
@@ -120,18 +123,26 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_organizations_type" ON "organizations" ("type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_organizations_parent" ON "organizations" ("parent_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_organizations_type" ON "organizations" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_organizations_parent" ON "organizations" ("parent_id")`);
 
-    // Add foreign key from users to organizations
+    // Add foreign key from users to organizations (idempotent)
     await queryRunner.query(`
-      ALTER TABLE "users" ADD CONSTRAINT "FK_users_organization"
-      FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE SET NULL
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints
+          WHERE constraint_name = 'FK_users_organization'
+        ) THEN
+          ALTER TABLE "users" ADD CONSTRAINT "FK_users_organization"
+          FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE SET NULL;
+        END IF;
+      END $$;
     `);
 
     // Memberships table
     await queryRunner.query(`
-      CREATE TABLE "memberships" (
+      CREATE TABLE IF NOT EXISTS "memberships" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "organization_id" uuid NOT NULL,
@@ -150,12 +161,12 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_memberships_user" ON "memberships" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_memberships_organization" ON "memberships" ("organization_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_memberships_user" ON "memberships" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_memberships_organization" ON "memberships" ("organization_id")`);
 
     // Geography table
     await queryRunner.query(`
-      CREATE TABLE "geography" (
+      CREATE TABLE IF NOT EXISTS "geography" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "name" varchar(255) NOT NULL,
         "type" varchar(50) NOT NULL,
@@ -168,8 +179,8 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_geography_type" ON "geography" ("type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_geography_code" ON "geography" ("code")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_geography_type" ON "geography" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_geography_code" ON "geography" ("code")`);
 
     // ============================================
     // KYC MODULE TABLES
@@ -177,7 +188,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Documents table
     await queryRunner.query(`
-      CREATE TABLE "documents" (
+      CREATE TABLE IF NOT EXISTS "documents" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "type" varchar(50) NOT NULL,
@@ -199,13 +210,13 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_documents_user" ON "documents" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_documents_type" ON "documents" ("type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_documents_status" ON "documents" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_documents_user" ON "documents" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_documents_type" ON "documents" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_documents_status" ON "documents" ("status")`);
 
     // KYC Validations table
     await queryRunner.query(`
-      CREATE TABLE "kyc_validations" (
+      CREATE TABLE IF NOT EXISTS "kyc_validations" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "document_id" uuid,
@@ -221,7 +232,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_kyc_validations_user" ON "kyc_validations" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_kyc_validations_user" ON "kyc_validations" ("user_id")`);
 
     // ============================================
     // PAYMENT MODULE TABLES
@@ -229,7 +240,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Wallets table
     await queryRunner.query(`
-      CREATE TABLE "wallets" (
+      CREATE TABLE IF NOT EXISTS "wallets" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "balance" decimal(12,2) NOT NULL DEFAULT 0,
@@ -253,12 +264,12 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_wallets_user" ON "wallets" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_wallets_policy_eligible" ON "wallets" ("policy_1_eligible", "policy_2_eligible")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_wallets_user" ON "wallets" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_wallets_policy_eligible" ON "wallets" ("policy_1_eligible", "policy_2_eligible")`);
 
     // Transactions table
     await queryRunner.query(`
-      CREATE TABLE "transactions" (
+      CREATE TABLE IF NOT EXISTS "transactions" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "wallet_id" uuid NOT NULL,
         "user_id" uuid NOT NULL,
@@ -279,16 +290,16 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_transactions_wallet" ON "transactions" ("wallet_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_transactions_user" ON "transactions" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_transactions_type" ON "transactions" ("type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_transactions_status" ON "transactions" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_transactions_reference" ON "transactions" ("reference")`);
-    await queryRunner.query(`CREATE INDEX "IDX_transactions_created_at" ON "transactions" ("created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_transactions_wallet" ON "transactions" ("wallet_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_transactions_user" ON "transactions" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_transactions_type" ON "transactions" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_transactions_status" ON "transactions" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_transactions_reference" ON "transactions" ("reference")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_transactions_created_at" ON "transactions" ("created_at")`);
 
     // Payment Requests table (M-Pesa STK Push)
     await queryRunner.query(`
-      CREATE TABLE "payment_requests" (
+      CREATE TABLE IF NOT EXISTS "payment_requests" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "wallet_id" uuid NOT NULL,
@@ -314,10 +325,10 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_payment_requests_user" ON "payment_requests" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_payment_requests_status" ON "payment_requests" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_payment_requests_checkout" ON "payment_requests" ("checkout_request_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_payment_requests_idempotency" ON "payment_requests" ("idempotency_key")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_payment_requests_user" ON "payment_requests" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_payment_requests_status" ON "payment_requests" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_payment_requests_checkout" ON "payment_requests" ("checkout_request_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_payment_requests_idempotency" ON "payment_requests" ("idempotency_key")`);
 
     // ============================================
     // POLICY MODULE TABLES
@@ -325,7 +336,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Policies table
     await queryRunner.query(`
-      CREATE TABLE "policies" (
+      CREATE TABLE IF NOT EXISTS "policies" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "policy_number" varchar(50) NOT NULL,
@@ -352,17 +363,17 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_policies_user" ON "policies" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_policies_number" ON "policies" ("policy_number")`);
-    await queryRunner.query(`CREATE INDEX "IDX_policies_status" ON "policies" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_policies_type" ON "policies" ("type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_policies_vehicle" ON "policies" ("vehicle_registration")`);
-    await queryRunner.query(`CREATE INDEX "IDX_policies_dates" ON "policies" ("start_date", "end_date")`);
-    await queryRunner.query(`CREATE INDEX "IDX_policies_batch" ON "policies" ("batch_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policies_user" ON "policies" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policies_number" ON "policies" ("policy_number")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policies_status" ON "policies" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policies_type" ON "policies" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policies_vehicle" ON "policies" ("vehicle_registration")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policies_dates" ON "policies" ("start_date", "end_date")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policies_batch" ON "policies" ("batch_id")`);
 
     // Policy Documents table
     await queryRunner.query(`
-      CREATE TABLE "policy_documents" (
+      CREATE TABLE IF NOT EXISTS "policy_documents" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "policy_id" uuid NOT NULL,
         "type" varchar(50) NOT NULL,
@@ -378,11 +389,11 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_policy_documents_policy" ON "policy_documents" ("policy_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policy_documents_policy" ON "policy_documents" ("policy_id")`);
 
     // Policy Batches table
     await queryRunner.query(`
-      CREATE TABLE "policy_batches" (
+      CREATE TABLE IF NOT EXISTS "policy_batches" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "batch_number" varchar(50) NOT NULL,
         "type" varchar(50) NOT NULL,
@@ -403,13 +414,21 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_policy_batches_status" ON "policy_batches" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_policy_batches_scheduled" ON "policy_batches" ("scheduled_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policy_batches_status" ON "policy_batches" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_policy_batches_scheduled" ON "policy_batches" ("scheduled_at")`);
 
-    // Add foreign key from policies to batches
+    // Add foreign key from policies to batches (idempotent)
     await queryRunner.query(`
-      ALTER TABLE "policies" ADD CONSTRAINT "FK_policies_batch"
-      FOREIGN KEY ("batch_id") REFERENCES "policy_batches"("id") ON DELETE SET NULL
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints
+          WHERE constraint_name = 'FK_policies_batch'
+        ) THEN
+          ALTER TABLE "policies" ADD CONSTRAINT "FK_policies_batch"
+          FOREIGN KEY ("batch_id") REFERENCES "policy_batches"("id") ON DELETE SET NULL;
+        END IF;
+      END $$;
     `);
 
     // ============================================
@@ -418,7 +437,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Notification Templates table
     await queryRunner.query(`
-      CREATE TABLE "notification_templates" (
+      CREATE TABLE IF NOT EXISTS "notification_templates" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "name" varchar(100) NOT NULL,
         "type" varchar(50) NOT NULL,
@@ -435,12 +454,12 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_notification_templates_type" ON "notification_templates" ("type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_notification_templates_channel" ON "notification_templates" ("channel")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_notification_templates_type" ON "notification_templates" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_notification_templates_channel" ON "notification_templates" ("channel")`);
 
     // Notifications table
     await queryRunner.query(`
-      CREATE TABLE "notifications" (
+      CREATE TABLE IF NOT EXISTS "notifications" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "template_id" uuid,
@@ -466,14 +485,14 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_notifications_user" ON "notifications" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_notifications_type" ON "notifications" ("type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_notifications_status" ON "notifications" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_notifications_created_at" ON "notifications" ("created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_notifications_user" ON "notifications" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_notifications_type" ON "notifications" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_notifications_status" ON "notifications" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_notifications_created_at" ON "notifications" ("created_at")`);
 
     // Notification Preferences table
     await queryRunner.query(`
-      CREATE TABLE "notification_preferences" (
+      CREATE TABLE IF NOT EXISTS "notification_preferences" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "user_id" uuid NOT NULL,
         "channel" varchar(20) NOT NULL,
@@ -487,7 +506,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_notification_preferences_user" ON "notification_preferences" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_notification_preferences_user" ON "notification_preferences" ("user_id")`);
 
     // ============================================
     // REPORTING MODULE TABLES
@@ -495,7 +514,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Report Definitions table
     await queryRunner.query(`
-      CREATE TABLE "report_definitions" (
+      CREATE TABLE IF NOT EXISTS "report_definitions" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "name" varchar(100) NOT NULL,
         "description" text,
@@ -513,11 +532,11 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_report_definitions_type" ON "report_definitions" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_report_definitions_type" ON "report_definitions" ("type")`);
 
     // Generated Reports table
     await queryRunner.query(`
-      CREATE TABLE "generated_reports" (
+      CREATE TABLE IF NOT EXISTS "generated_reports" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "definition_id" uuid,
         "name" varchar(255) NOT NULL,
@@ -538,8 +557,8 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_generated_reports_status" ON "generated_reports" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_generated_reports_created_at" ON "generated_reports" ("created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_generated_reports_status" ON "generated_reports" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_generated_reports_created_at" ON "generated_reports" ("created_at")`);
 
     // ============================================
     // SCHEDULER MODULE TABLES
@@ -547,7 +566,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Jobs table
     await queryRunner.query(`
-      CREATE TABLE "jobs" (
+      CREATE TABLE IF NOT EXISTS "jobs" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "name" varchar(100) NOT NULL,
         "type" varchar(50) NOT NULL,
@@ -563,12 +582,12 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_jobs_type" ON "jobs" ("type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_jobs_next_run" ON "jobs" ("next_run_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_jobs_type" ON "jobs" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_jobs_next_run" ON "jobs" ("next_run_at")`);
 
     // Job History table
     await queryRunner.query(`
-      CREATE TABLE "job_history" (
+      CREATE TABLE IF NOT EXISTS "job_history" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "job_id" uuid NOT NULL,
         "status" varchar(20) NOT NULL,
@@ -583,9 +602,9 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_job_history_job" ON "job_history" ("job_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_job_history_status" ON "job_history" ("status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_job_history_started_at" ON "job_history" ("started_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_job_history_job" ON "job_history" ("job_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_job_history_status" ON "job_history" ("status")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_job_history_started_at" ON "job_history" ("started_at")`);
 
     // ============================================
     // AUDIT MODULE TABLES
@@ -593,7 +612,7 @@ export class InitialSchema1734200000000 implements MigrationInterface {
 
     // Audit Events table
     await queryRunner.query(`
-      CREATE TABLE "audit_events" (
+      CREATE TABLE IF NOT EXISTS "audit_events" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "event_type" varchar(100) NOT NULL,
         "entity_type" varchar(100),
@@ -610,10 +629,10 @@ export class InitialSchema1734200000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_audit_events_type" ON "audit_events" ("event_type")`);
-    await queryRunner.query(`CREATE INDEX "IDX_audit_events_entity" ON "audit_events" ("entity_type", "entity_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_audit_events_user" ON "audit_events" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_audit_events_created_at" ON "audit_events" ("created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_audit_events_type" ON "audit_events" ("event_type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_audit_events_entity" ON "audit_events" ("entity_type", "entity_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_audit_events_user" ON "audit_events" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_audit_events_created_at" ON "audit_events" ("created_at")`);
 
     // Create audit trigger function
     await queryRunner.query(`

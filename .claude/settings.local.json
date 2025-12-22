@@ -43,7 +43,12 @@
       "Bash(timeout 45 docker logs:*)",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3YzM3ZGNlOS1mY2VjLTRiODAtYjRmZS01NmM0ZTY1M2QwZmUiLCJwaG9uZSI6IisyNTQwMDAwMDAwMDAiLCJyb2xlIjoicGxhdGZvcm1fYWRtaW4iLCJvcmdhbml6YXRpb25JZCI6bnVsbCwiaWF0IjoxNzY2MDc2MDQzLCJleHAiOjE3Njg2NjgwNDN9.8tAZmsGe-TzrrovwlIw_Zs-oD8eE05uLaqppIuqCC0M\")",
       "Bash(docker restart:*)",
-      "Bash(timeout 5 docker logs:*)"
+      "Bash(timeout 5 docker logs:*)",
+      "Bash(if not exist \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\client\\\\src\\\\pages\\\\organizations\\\\components\" mkdir \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\client\\\\src\\\\pages\\\\organizations\\\\components\")",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(docker cp:*)",
+      "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\server\\\\src\\\\modules\\\\identity\\\\guards\\\\jwt-auth.guard.ts\")",
+      "Bash(docker run:*)"
     ]
   }
 }

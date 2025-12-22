@@ -10,6 +10,9 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Per Data Protection Act 2019:
  * - Right to Deletion with 30-day grace period
  * - User can cancel deletion within grace period
+ *
+ * IDEMPOTENT: All operations use IF NOT EXISTS / IF EXISTS patterns.
+ * Safe to run multiple times.
  */
 export class AddAccountDeletionFields1734500000000 implements MigrationInterface {
   name = 'AddAccountDeletionFields1734500000000';

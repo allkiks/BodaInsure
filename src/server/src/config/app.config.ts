@@ -123,6 +123,7 @@ export default registerAs('app', () => {
         accessKeyId: process.env['AWS_ACCESS_KEY_ID'],
         secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY'],
         endpoint: process.env['AWS_S3_ENDPOINT'], // For MinIO/LocalStack
+        publicEndpoint: process.env['AWS_S3_PUBLIC_ENDPOINT'], // Public URL for presigned URLs (browser-accessible)
         forcePathStyle: process.env['AWS_S3_FORCE_PATH_STYLE'] === 'true',
       },
 

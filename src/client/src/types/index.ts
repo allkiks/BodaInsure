@@ -9,6 +9,7 @@ export interface User {
   username?: string;
   firstName?: string;
   lastName?: string;
+  fullName?: string;
   email?: string;
   nationalId?: string;
   dateOfBirth?: string;
@@ -16,19 +17,21 @@ export interface User {
   status: UserStatus;
   kycStatus: KycStatus;
   language: Language;
+  organizationId?: string; // For role-based access control
   createdAt: string;
   updatedAt: string;
 }
 
 export type UserRole = 'rider' | 'sacco_admin' | 'kba_admin' | 'insurance_admin' | 'platform_admin';
 
-export type UserStatus = 'active' | 'inactive' | 'suspended' | 'pending';
+// GAP-015: Standardized to UPPERCASE (matching server)
+export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING';
 
 export type Language = 'en' | 'sw';
 
 // KYC types
-// Server uses uppercase status values
-export type KycStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+// GAP-015: Standardized to UPPERCASE (matching server)
+export type KycStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
 export type DocumentStatus = 'PENDING' | 'PROCESSING' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED';
 
 export interface KycDocument {
@@ -66,7 +69,8 @@ export interface Payment {
 
 export type PaymentType = 'deposit' | 'daily' | 'bulk';
 
-export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'cancelled';
+// GAP-015: Standardized to UPPERCASE (matching server)
+export type PaymentStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
 export interface Wallet {
   id: string;
@@ -96,7 +100,8 @@ export interface Policy {
 
 export type PolicyType = 'initial' | 'extended';
 
-export type PolicyStatus = 'pending' | 'active' | 'expired' | 'cancelled' | 'lapsed';
+// GAP-015: Standardized to UPPERCASE (matching server)
+export type PolicyStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'LAPSED';
 
 // Organization types
 export interface Organization {
@@ -228,20 +233,75 @@ export interface CreatePolicyTermsRequest {
   effectiveTo?: string;
 }
 
+// Membership types - matches server entity
 export interface Membership {
   id: string;
   userId: string;
   organizationId: string;
+  organizationName?: string;
+  organizationCode?: string;
   role: MembershipRole;
   status: MembershipStatus;
-  joinedAt: string;
+  memberNumber?: string;
+  isPrimary: boolean;
+  joinedAt?: string;
+  expiresAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  suspendedBy?: string;
+  suspendedAt?: string;
+  suspensionReason?: string;
+  feePaid?: number;
+  feeReference?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export type MembershipRole = 'member' | 'official' | 'admin';
+// Member with user details (for organization member lists)
+// This matches what organizationsApi.getMembers returns: User & { membership: Membership }
+export type OrganizationMember = User & { membership: Membership };
 
-export type MembershipStatus = 'active' | 'inactive' | 'pending';
+// Server uses uppercase role values
+export type MembershipRole = 'MEMBER' | 'OFFICIAL' | 'ADMIN' | 'CHAIRPERSON' | 'SECRETARY' | 'TREASURER';
+
+// Server uses uppercase status values
+export type MembershipStatus = 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'REVOKED';
+
+// Request types for membership operations
+export interface CreateMembershipRequest {
+  userId: string;
+  organizationId: string;
+  role?: MembershipRole;
+  memberNumber?: string;
+  isPrimary?: boolean;
+}
+
+export interface UpdateMembershipRequest {
+  role?: MembershipRole;
+  memberNumber?: string;
+  isPrimary?: boolean;
+  expiresAt?: string;
+}
+
+export interface SuspendMembershipRequest {
+  reason?: string;
+}
+
+export interface BulkAddMembersRequest {
+  userIds: string[];
+  role?: MembershipRole;
+}
+
+export interface BulkAddMembersResponse {
+  created: number;
+  errors: number;
+  results: {
+    userId: string;
+    status: 'created' | 'existing' | 'error';
+    membershipId?: string;
+    error?: string;
+  }[];
+}
 
 // Dashboard types
 export interface DashboardMetrics {
@@ -373,6 +433,32 @@ export interface LoginRequest {
 export interface LoginResponse {
   sessionId: string;
   expiresAt: string;
+}
+
+// Registration request - GAP-004: All riders must belong to a SACCO
+export interface RegisterRequest {
+  phone: string;
+  organizationId: string;
+  termsAccepted: boolean;
+  language?: 'en' | 'sw';
+  role?: UserRole;
+  useDefaultPassword?: boolean; // Skip OTP and use default password (ChangeMe123!)
+}
+
+export interface RegisterResponse {
+  status: 'SUCCESS' | 'DUPLICATE' | 'INVALID_PHONE' | 'TERMS_NOT_ACCEPTED' | 'RATE_LIMITED' | 'ERROR';
+  userId?: string;
+  otpSent: boolean;
+  message: string;
+}
+
+// Admin user creation request
+export interface CreateUserRequest {
+  phone: string;
+  organizationId: string;
+  role?: UserRole;
+  termsAccepted?: boolean;
+  language?: Language;
 }
 
 export interface OtpVerifyRequest {

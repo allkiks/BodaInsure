@@ -107,6 +107,10 @@ export class PaymentStatusResponseDto {
   @ApiPropertyOptional({ description: 'Failure reason if failed' })
   failureReason?: string;
 
+  // GAP-007: Include M-Pesa result code for specific error messages
+  @ApiPropertyOptional({ description: 'M-Pesa result code for specific error handling' })
+  resultCode?: string;
+
   @ApiProperty({ description: 'Request creation time' })
   createdAt!: Date;
 }

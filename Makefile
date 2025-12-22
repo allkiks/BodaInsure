@@ -69,19 +69,16 @@ dev-docker: ## Start the full Docker development environment (builds, starts, ru
 	@echo "  Build complete!"
 	@echo ""
 	@echo "[3/5] Starting infrastructure services..."
-	$(DOCKER_COMPOSE) up -d postgres redis minio mailhog
-	@echo "  Waiting for infrastructure to be healthy..."
-	$(DOCKER_COMPOSE) up -d minio-init
-	@$(WAIT) 10
+	@$(DOCKER_COMPOSE) up -d --wait postgres redis minio mailhog minio-init >/dev/null 2>&1 || (echo "  Infrastructure starting..." && $(WAIT) 10)
 	@echo "  Infrastructure ready!"
 	@echo ""
 	@echo "[4/5] Starting application services..."
+	@echo "  Starting server (migrations and seeding may take 30-60 seconds on first run)..."
 	$(DOCKER_COMPOSE) up -d server
-	@echo "  Waiting for server to start (running migrations)..."
-	@$(WAIT) 30
+	@echo "  Starting client..."
 	$(DOCKER_COMPOSE) up -d client
-	@echo "  Waiting for client to start..."
-	@$(WAIT) 15
+	@echo "  Waiting for services to be ready..."
+	@$(WAIT) 30
 	@echo ""
 	@echo "[5/5] Environment Ready!"
 	@echo ""

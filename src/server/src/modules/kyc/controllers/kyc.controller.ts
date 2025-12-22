@@ -38,6 +38,7 @@ import type { ICurrentUser } from '../../../common/decorators/current-user.decor
 import { DocumentService } from '../services/document.service.js';
 import { KycService } from '../services/kyc.service.js';
 import { StorageService } from '../../storage/services/storage.service.js';
+import { StorageBucket } from '../../storage/interfaces/storage-provider.interface.js';
 import { DocumentType, DocumentStatus } from '../entities/document.entity.js';
 import {
   UploadDocumentDto,
@@ -235,13 +236,14 @@ export class KycController {
   /**
    * Get KYC queue statistics (Admin)
    * GET /api/v1/kyc/admin/pending/stats
+   * GAP-004: Stats are scoped to user's accessible organizations
    */
   @Get('admin/pending/stats')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN, UserRole.KBA_ADMIN, UserRole.SACCO_ADMIN)
   @ApiOperation({
     summary: 'Get KYC queue statistics (Admin)',
-    description: 'Returns statistics for the KYC review queue',
+    description: 'Returns statistics for the KYC review queue (scoped by role)',
   })
   @ApiResponse({
     status: 200,
@@ -256,26 +258,28 @@ export class KycController {
       },
     },
   })
-  async getQueueStats() {
-    return this.documentService.getQueueStats();
+  async getQueueStats(@CurrentUser() user: ICurrentUser) {
+    return this.documentService.getQueueStats(user);
   }
 
   /**
    * Get documents pending review (Admin)
    * GET /api/v1/kyc/admin/pending
+   * GAP-004: Documents are scoped to user's accessible organizations
    */
   @Get('admin/pending')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN, UserRole.KBA_ADMIN, UserRole.SACCO_ADMIN)
   @ApiOperation({
     summary: 'Get pending documents (Admin)',
-    description: 'Returns documents awaiting review',
+    description: 'Returns documents awaiting review (scoped by role)',
   })
   @ApiQuery({ name: 'documentType', required: false, enum: DocumentType })
   @ApiQuery({ name: 'userId', required: false })
   @ApiQuery({ name: 'page', required: false, type: Number })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   async getPendingDocuments(
+    @CurrentUser() user: ICurrentUser,
     @Query('documentType') documentType?: DocumentType,
     @Query('userId') userId?: string,
     @Query('page') page?: number,
@@ -286,25 +290,31 @@ export class KycController {
       userId,
       page,
       limit,
+      user,
     });
   }
 
   /**
    * Review a document (Admin)
    * PATCH /api/v1/kyc/admin/documents/:id/review
+   * GAP-004: Access is scoped to user's accessible organizations
    */
   @Patch('admin/documents/:id/review')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN, UserRole.KBA_ADMIN, UserRole.SACCO_ADMIN)
   @ApiOperation({
     summary: 'Review document (Admin)',
-    description: 'Approve or reject a document',
+    description: 'Approve or reject a document (scoped by role)',
   })
   @ApiParam({ name: 'id', description: 'Document ID' })
   @ApiResponse({
     status: 200,
     description: 'Document reviewed',
     type: ReviewDocumentResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - cannot access this document',
   })
   async reviewDocument(
     @Param('id') documentId: string,
@@ -313,7 +323,7 @@ export class KycController {
   ): Promise<ReviewDocumentResponseDto> {
     const document = await this.documentService.reviewDocument(
       documentId,
-      reviewer.userId,
+      reviewer,
       dto.status,
       dto.rejectionReason,
       dto.reviewerNotes,
@@ -337,17 +347,25 @@ export class KycController {
   /**
    * Get document details (Admin)
    * GET /api/v1/kyc/admin/documents/:id
+   * GAP-004: Access is scoped to user's accessible organizations
    */
   @Get('admin/documents/:id')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN, UserRole.KBA_ADMIN, UserRole.SACCO_ADMIN)
   @ApiOperation({
     summary: 'Get document details (Admin)',
-    description: 'Returns detailed information about a document',
+    description: 'Returns detailed information about a document (scoped by role)',
   })
   @ApiParam({ name: 'id', description: 'Document ID' })
-  async getDocumentDetails(@Param('id') documentId: string) {
-    const document = await this.documentService.getDocumentById(documentId);
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - cannot access this document',
+  })
+  async getDocumentDetails(
+    @Param('id') documentId: string,
+    @CurrentUser() user: ICurrentUser,
+  ) {
+    const document = await this.documentService.getDocumentById(documentId, user);
     if (!document) {
       return { error: 'Document not found' };
     }
@@ -357,13 +375,14 @@ export class KycController {
   /**
    * Get document URL for viewing (Admin)
    * GET /api/v1/kyc/admin/documents/:id/url
+   * GAP-004: Access is scoped to user's accessible organizations
    */
   @Get('admin/documents/:id/url')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN, UserRole.KBA_ADMIN, UserRole.SACCO_ADMIN)
   @ApiOperation({
     summary: 'Get document URL (Admin)',
-    description: 'Returns a URL for viewing the document',
+    description: 'Returns a URL for viewing the document (scoped by role)',
   })
   @ApiParam({ name: 'id', description: 'Document ID' })
   @ApiResponse({
@@ -377,43 +396,83 @@ export class KycController {
       },
     },
   })
-  async getDocumentUrl(@Param('id') documentId: string) {
-    const document = await this.documentService.getDocumentById(documentId);
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - cannot access this document',
+  })
+  async getDocumentUrl(
+    @Param('id') documentId: string,
+    @CurrentUser() user: ICurrentUser,
+  ) {
+    const document = await this.documentService.getDocumentById(documentId, user);
     if (!document) {
       throw new NotFoundException('Document not found');
     }
 
-    // Return URL to the download endpoint
-    const baseUrl = process.env['API_BASE_URL'] || 'http://localhost:3000';
-    const url = `${baseUrl}/api/v1/kyc/admin/documents/${documentId}/download`;
+    // Extract userId and fileName from storageKey
+    const keyParts = document.storageKey.split('/');
+    let userId: string | undefined;
+    let fileName: string | undefined;
 
-    // Set expiry to 1 hour from now
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    if (keyParts.length === 2) {
+      // AWS/MinIO format: "{userId}/{fileName}"
+      userId = keyParts[0];
+      fileName = keyParts[1];
+    } else if (keyParts.length >= 3) {
+      // Local format: "{bucket}/{userId}/{fileName}"
+      userId = keyParts[1];
+      fileName = keyParts[2];
+    }
 
-    return { url, expiresAt };
+    if (!userId || !fileName) {
+      throw new NotFoundException('Invalid storage key format');
+    }
+
+    // Generate presigned URL from MinIO/S3 (1 hour expiry)
+    const signedUrlResult = await this.storageService.getSignedDownloadUrl(
+      StorageBucket.KYC,
+      userId,
+      fileName,
+      { expiresIn: 3600 },
+    );
+
+    if (!signedUrlResult.success || !signedUrlResult.url) {
+      throw new NotFoundException('Failed to generate document URL');
+    }
+
+    return {
+      url: signedUrlResult.url,
+      expiresAt: signedUrlResult.expiresAt?.toISOString(),
+    };
   }
 
   /**
    * Download document file (Admin)
    * GET /api/v1/kyc/admin/documents/:id/download
+   * GAP-004: Access is scoped to user's accessible organizations
    */
   @Get('admin/documents/:id/download')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN, UserRole.INSURANCE_ADMIN, UserRole.KBA_ADMIN, UserRole.SACCO_ADMIN)
   @ApiOperation({
     summary: 'Download document file (Admin)',
-    description: 'Returns the actual document file for viewing',
+    description: 'Returns the actual document file for viewing (scoped by role)',
   })
   @ApiParam({ name: 'id', description: 'Document ID' })
   @ApiResponse({
     status: 200,
     description: 'Document file',
   })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - cannot access this document',
+  })
   async downloadDocument(
     @Param('id') documentId: string,
+    @CurrentUser() user: ICurrentUser,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const document = await this.documentService.getDocumentById(documentId);
+    const document = await this.documentService.getDocumentById(documentId, user);
     if (!document) {
       throw new NotFoundException('Document not found');
     }
@@ -447,10 +506,13 @@ export class KycController {
     }
 
     // Set response headers
+    // Note: Cross-Origin-Resource-Policy must be 'cross-origin' to allow
+    // blob downloads from different origin (client on :5173, server on :3000)
     res.set({
       'Content-Type': downloadResult.contentType || document.mimeType || 'application/octet-stream',
       'Content-Disposition': `inline; filename="${document.originalFilename || fileName}"`,
       'Cache-Control': 'private, max-age=3600',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
     });
 
     return new StreamableFile(downloadResult.data);

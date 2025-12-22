@@ -15,11 +15,6 @@ export interface PolicyWithProgress extends Policy {
   progress?: number;
 }
 
-// Server response shape for my policies
-interface ServerMyPoliciesResponse {
-  data: PolicyWithProgress[];
-}
-
 // Server response shape for policy document download
 interface ServerDocumentResponse {
   downloadUrl: string | null;
@@ -31,12 +26,12 @@ export const policyApi = {
    * Get current user's policies
    */
   getMyPolicies: async (filters?: PolicyFilters): Promise<PaginatedResponse<PolicyWithProgress>> => {
-    const response = await apiClient.get<{ data: ServerMyPoliciesResponse }>(
+    const response = await apiClient.get<{ data: PolicyWithProgress[] }>(
       API_ENDPOINTS.POLICIES_MY,
       { params: filters }
     );
     // Server returns { data: PolicyWithProgress[] }, transform to PaginatedResponse
-    const policies = response.data.data.data;
+    const policies = response.data.data ?? [];
     return {
       data: policies,
       meta: {

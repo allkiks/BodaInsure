@@ -12,6 +12,7 @@ import {
   Logger,
   ParseUUIDPipe,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,11 +23,12 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
-import { JwtAuthGuard } from '../../identity/guards/jwt-auth.guard.js';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../../identity/decorators/current-user.decorator.js';
 import { PaymentService } from '../services/payment.service.js';
 import { WalletService } from '../services/wallet.service.js';
 import { MpesaService } from '../services/mpesa.service.js';
+import { KycService } from '../../kyc/services/kyc.service.js';
 import type { MpesaCallbackBody } from '../services/mpesa.service.js';
 import { TransactionType } from '../entities/transaction.entity.js';
 import {
@@ -63,6 +65,7 @@ export class PaymentController {
   constructor(
     private readonly paymentService: PaymentService,
     private readonly walletService: WalletService,
+    private readonly kycService: KycService,
   ) {}
 
   /**
@@ -89,6 +92,14 @@ export class PaymentController {
     @Body() dto: InitiateDepositDto,
     @Req() req: Request,
   ): Promise<InitiatePaymentResponseDto> {
+    // Check KYC status before allowing payment
+    const canProceed = await this.kycService.canProceedToPayment(user.userId);
+    if (!canProceed) {
+      throw new ForbiddenException(
+        'KYC verification must be completed before making payments. Please upload and get all required documents approved.',
+      );
+    }
+
     this.logger.log(`Deposit initiated: userId=${user.userId.slice(0, 8)}...`);
 
     const result = await this.paymentService.initiatePayment({
@@ -134,6 +145,14 @@ export class PaymentController {
     @Body() dto: InitiateDailyPaymentDto,
     @Req() req: Request,
   ): Promise<InitiatePaymentResponseDto> {
+    // Check KYC status before allowing payment
+    const canProceed = await this.kycService.canProceedToPayment(user.userId);
+    if (!canProceed) {
+      throw new ForbiddenException(
+        'KYC verification must be completed before making payments. Please upload and get all required documents approved.',
+      );
+    }
+
     this.logger.log(
       `Daily payment initiated: userId=${user.userId.slice(0, 8)}... days=${dto.daysCount ?? 1}`,
     );
@@ -198,6 +217,8 @@ export class PaymentController {
       amount: paymentRequest.getAmountInKes(),
       type: paymentRequest.paymentType,
       failureReason: paymentRequest.resultDescription ?? undefined,
+      // GAP-007: Include resultCode for specific M-Pesa error messages on frontend
+      resultCode: paymentRequest.resultCode ?? undefined,
       createdAt: paymentRequest.createdAt,
     };
   }
@@ -220,6 +241,15 @@ export class PaymentController {
   async checkDepositEligibility(
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<PaymentEligibilityResponseDto> {
+    // Check KYC status first
+    const canProceed = await this.kycService.canProceedToPayment(user.userId);
+    if (!canProceed) {
+      return {
+        allowed: false,
+        reason: 'KYC verification must be completed before making payments',
+      };
+    }
+
     const result = await this.walletService.canMakeDeposit(user.userId);
     return {
       allowed: result.allowed,
@@ -245,6 +275,15 @@ export class PaymentController {
   async checkDailyEligibility(
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<PaymentEligibilityResponseDto> {
+    // Check KYC status first
+    const canProceed = await this.kycService.canProceedToPayment(user.userId);
+    if (!canProceed) {
+      return {
+        allowed: false,
+        reason: 'KYC verification must be completed before making payments',
+      };
+    }
+
     const result = await this.walletService.canMakeDailyPayment(user.userId);
     return {
       allowed: result.allowed,

@@ -9,7 +9,8 @@ export interface UserSearchResult {
   phone: string;
   fullName: string | null;
   kycStatus: string;
-  isActive: boolean;
+  status: string;
+  role: string;
   createdAt: Date;
   walletBalance: number;
   policyCount: number;
@@ -19,8 +20,9 @@ export interface UserSearchResult {
  * User detail
  */
 export interface UserDetail extends UserSearchResult {
-  countyCode: string | null;
-  nationalIdLast4: string | null;
+  nationalId: string | null;
+  email: string | null;
+  organizationId: string | null;
   organizations: Array<{
     id: string;
     name: string;
@@ -81,7 +83,8 @@ export class AdminService {
           u.phone,
           u.full_name as "fullName",
           u.kyc_status as "kycStatus",
-          u.is_active as "isActive",
+          u.status as "status",
+          u.role as "role",
           u.created_at as "createdAt",
           COALESCE(w.balance, 0) as "walletBalance",
           (SELECT COUNT(*) FROM policies WHERE user_id = u.id) as "policyCount"
@@ -120,10 +123,12 @@ export class AdminService {
         u.phone,
         u.full_name as "fullName",
         u.kyc_status as "kycStatus",
-        u.is_active as "isActive",
+        u.status as "status",
+        u.role as "role",
         u.created_at as "createdAt",
-        u.county_code as "countyCode",
-        u.national_id_last_four as "nationalIdLast4",
+        u.national_id as "nationalId",
+        u.email as "email",
+        u.organization_id as "organizationId",
         COALESCE(w.balance, 0) as "walletBalance"
       FROM users u
       LEFT JOIN wallets w ON w.user_id = u.id

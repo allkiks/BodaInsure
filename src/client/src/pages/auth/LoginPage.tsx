@@ -108,7 +108,13 @@ export default function LoginPage() {
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="flex justify-center">
+        <CardFooter className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">
+            New rider?{' '}
+            <Link to="/register" className="text-primary hover:underline">
+              Register here
+            </Link>
+          </p>
           <p className="text-sm text-muted-foreground">
             Admin user?{' '}
             <Link to="/admin/login" className="text-primary hover:underline">

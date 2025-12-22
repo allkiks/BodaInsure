@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
@@ -21,6 +21,9 @@ import {
   MpesaCallbackController,
 } from './controllers/payment.controller.js';
 
+// External modules
+import { KycModule } from '../kyc/kyc.module.js';
+
 /**
  * Payment Module
  * Handles M-Pesa payments, wallet management, and transaction tracking
@@ -35,6 +38,7 @@ import {
       maxRedirects: 5,
     }),
     ConfigModule,
+    forwardRef(() => KycModule), // For KYC status check before payments
   ],
   controllers: [
     PaymentController,

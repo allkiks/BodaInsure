@@ -21,17 +21,13 @@ export const PAYMENT_CONFIG = {
 export const POLICY_TYPE_1_MONTH = '1_MONTH';
 export const POLICY_TYPE_11_MONTH = '11_MONTH';
 
-// User roles
+// User roles - aligned with UserRole enum in user.entity.ts
 export const ROLES = {
   RIDER: 'rider',
   SACCO_ADMIN: 'sacco_admin',
   KBA_ADMIN: 'kba_admin',
   INSURANCE_ADMIN: 'insurance_admin',
   PLATFORM_ADMIN: 'platform_admin',
-  ADMIN: 'admin',
-  DPO: 'dpo',
-  SECURITY: 'security',
-  COMPLIANCE: 'compliance',
 } as const;
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];

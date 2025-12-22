@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
@@ -10,6 +11,8 @@ import {
   AlertCircle,
   Car,
   FileText,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,17 +22,23 @@ import { formatDate } from '@/lib/utils';
 import { policyApi } from '@/services/api/policy.api';
 import type { PolicyStatus } from '@/types';
 
+// GAP-015: Status config uses UPPERCASE to match server/types
 const statusConfig: Record<PolicyStatus, { label: string; icon: React.ReactNode; variant: 'default' | 'secondary' | 'destructive' | 'outline'; color: string }> = {
-  active: { label: 'Active', icon: <CheckCircle className="h-4 w-4" />, variant: 'default', color: 'text-green-600' },
-  pending: { label: 'Pending', icon: <Clock className="h-4 w-4" />, variant: 'secondary', color: 'text-yellow-600' },
-  expired: { label: 'Expired', icon: <AlertCircle className="h-4 w-4" />, variant: 'outline', color: 'text-gray-600' },
-  cancelled: { label: 'Cancelled', icon: <AlertCircle className="h-4 w-4" />, variant: 'destructive', color: 'text-red-600' },
-  lapsed: { label: 'Lapsed', icon: <AlertCircle className="h-4 w-4" />, variant: 'destructive', color: 'text-red-600' },
+  ACTIVE: { label: 'Active', icon: <CheckCircle className="h-4 w-4" />, variant: 'default', color: 'text-green-600' },
+  PENDING: { label: 'Pending', icon: <Clock className="h-4 w-4" />, variant: 'secondary', color: 'text-yellow-600' },
+  EXPIRED: { label: 'Expired', icon: <AlertCircle className="h-4 w-4" />, variant: 'outline', color: 'text-gray-600' },
+  CANCELLED: { label: 'Cancelled', icon: <AlertCircle className="h-4 w-4" />, variant: 'destructive', color: 'text-red-600' },
+  LAPSED: { label: 'Lapsed', icon: <AlertCircle className="h-4 w-4" />, variant: 'destructive', color: 'text-red-600' },
 };
+
+// GAP-010: Document download state management
+type DownloadState = 'idle' | 'loading' | 'generating' | 'ready' | 'error';
 
 export default function PolicyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [downloadState, setDownloadState] = useState<DownloadState>('idle');
+  const [downloadMessage, setDownloadMessage] = useState<string>('');
 
   const { data: policy, isLoading, error } = useQuery({
     queryKey: ['policy', id],
@@ -37,10 +46,28 @@ export default function PolicyDetailPage() {
     enabled: !!id,
   });
 
+  // GAP-010: Handle document download with generation state
   const downloadDocument = useMutation({
     mutationFn: () => policyApi.downloadDocument(id!),
+    onMutate: () => {
+      setDownloadState('loading');
+      setDownloadMessage('');
+    },
     onSuccess: (data) => {
-      window.open(data.url, '_blank');
+      if (data.url) {
+        setDownloadState('ready');
+        window.open(data.url, '_blank');
+        // Reset to idle after a short delay
+        setTimeout(() => setDownloadState('idle'), 2000);
+      } else {
+        // Document is being generated
+        setDownloadState('generating');
+        setDownloadMessage(data.message || 'Your policy document is being generated. This usually takes a few minutes.');
+      }
+    },
+    onError: () => {
+      setDownloadState('error');
+      setDownloadMessage('Failed to download document. Please try again.');
     },
   });
 
@@ -64,7 +91,8 @@ export default function PolicyDetailPage() {
   }
 
   const config = statusConfig[policy.status];
-  const daysRemaining = policy.status === 'active'
+  // GAP-015: Use UPPERCASE status constant
+  const daysRemaining = policy.status === 'ACTIVE'
     ? Math.ceil((new Date(policy.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : 0;
 
@@ -81,26 +109,26 @@ export default function PolicyDetailPage() {
       </div>
 
       {/* Status Card */}
-      <Card className={policy.status === 'active' ? 'bg-gradient-to-br from-green-500 to-green-600 text-white' : ''}>
+      <Card className={policy.status === 'ACTIVE' ? 'bg-gradient-to-br from-green-500 to-green-600 text-white' : ''}>
         <CardContent className="flex items-center justify-between p-6">
           <div className="flex items-center gap-4">
-            <div className={`flex h-16 w-16 items-center justify-center rounded-full ${policy.status === 'active' ? 'bg-white/20' : 'bg-primary/10'}`}>
-              <Shield className={`h-8 w-8 ${policy.status === 'active' ? 'text-white' : 'text-primary'}`} />
+            <div className={`flex h-16 w-16 items-center justify-center rounded-full ${policy.status === 'ACTIVE' ? 'bg-white/20' : 'bg-primary/10'}`}>
+              <Shield className={`h-8 w-8 ${policy.status === 'ACTIVE' ? 'text-white' : 'text-primary'}`} />
             </div>
             <div>
-              <Badge variant={policy.status === 'active' ? 'secondary' : config.variant} className="gap-1 mb-2">
+              <Badge variant={policy.status === 'ACTIVE' ? 'secondary' : config.variant} className="gap-1 mb-2">
                 {config.icon}
                 {config.label}
               </Badge>
-              <p className={`text-2xl font-bold ${policy.status === 'active' ? 'text-white' : ''}`}>
+              <p className={`text-2xl font-bold ${policy.status === 'ACTIVE' ? 'text-white' : ''}`}>
                 {policy.policyNumber}
               </p>
-              <p className={`text-sm ${policy.status === 'active' ? 'text-white/80' : 'text-muted-foreground'}`}>
+              <p className={`text-sm ${policy.status === 'ACTIVE' ? 'text-white/80' : 'text-muted-foreground'}`}>
                 {policy.type === 'initial' ? 'Initial Policy (1 Month)' : 'Extended Policy (11 Months)'}
               </p>
             </div>
           </div>
-          {policy.status === 'active' && daysRemaining > 0 && (
+          {policy.status === 'ACTIVE' && daysRemaining > 0 && (
             <div className="text-right">
               <p className="text-4xl font-bold">{daysRemaining}</p>
               <p className="text-sm text-white/80">days remaining</p>
@@ -194,14 +222,51 @@ export default function PolicyDetailPage() {
               Download your official policy certificate
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            {/* GAP-010: Show different states for document download */}
+            {downloadState === 'generating' && (
+              <div className="flex items-center gap-2 rounded-lg bg-yellow-50 p-3 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+                <Clock className="h-4 w-4 animate-pulse" />
+                <span className="text-sm">{downloadMessage}</span>
+              </div>
+            )}
+
+            {downloadState === 'error' && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-red-800 dark:bg-red-900/20 dark:text-red-200">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">{downloadMessage}</span>
+              </div>
+            )}
+
+            {downloadState === 'ready' && (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-green-800 dark:bg-green-900/20 dark:text-green-200">
+                <CheckCircle className="h-4 w-4" />
+                <span className="text-sm">Document opened in new tab</span>
+              </div>
+            )}
+
             <Button
               onClick={() => downloadDocument.mutate()}
-              disabled={downloadDocument.isPending}
+              disabled={downloadState === 'loading'}
+              variant={downloadState === 'generating' ? 'outline' : 'default'}
               className="w-full"
             >
-              <Download className="mr-2 h-4 w-4" />
-              {downloadDocument.isPending ? 'Preparing...' : 'Download Policy PDF'}
+              {downloadState === 'loading' ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Preparing...
+                </>
+              ) : downloadState === 'generating' ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Check Again
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Policy PDF
+                </>
+              )}
             </Button>
           </CardContent>
         </Card>

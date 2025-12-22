@@ -7,11 +7,12 @@ export interface WalletResponse {
   recentTransactions: Payment[];
 }
 
+// GAP-015: Status types use UPPERCASE to match server
 export interface TransactionFilters {
   page?: number;
   limit?: number;
   type?: 'deposit' | 'daily' | 'bulk';
-  status?: 'pending' | 'completed' | 'failed';
+  status?: 'PENDING' | 'COMPLETED' | 'FAILED';
   startDate?: string;
   endDate?: string;
 }

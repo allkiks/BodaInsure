@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { organizationsApi } from '@/services/api/organizations.api';
-import { useAuthStore } from '@/stores/authStore';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { Organization, OrganizationType, OrganizationStatus } from '@/types';
 
 const typeLabels: Record<OrganizationType, string> = {
@@ -34,13 +34,11 @@ const statusColors: Record<OrganizationStatus, string> = {
 
 export default function OrganizationListPage() {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { canCreateOrganization } = usePermissions(); // GAP-005: Use permissions hook
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
-
-  const isAdmin = user?.role === 'platform_admin' || user?.role === 'kba_admin';
 
   const { data, isLoading } = useQuery({
     queryKey: ['organizations', searchQuery, typeFilter, statusFilter, page],
@@ -71,7 +69,7 @@ export default function OrganizationListPage() {
             Manage KBA, SACCOs, and associations
           </p>
         </div>
-        {isAdmin && (
+        {canCreateOrganization && (
           <Button onClick={() => navigate('/organizations/new')}>
             <Plus className="mr-2 h-4 w-4" />
             Create Organization

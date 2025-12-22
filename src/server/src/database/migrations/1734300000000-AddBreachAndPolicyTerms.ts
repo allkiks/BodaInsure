@@ -4,40 +4,74 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Migration: Add Breach Incidents and Policy Terms tables
  * CR-DPA-003: Breach notification workflow
  * CR-IRA-003: Policy terms acknowledgment
+ *
+ * IDEMPOTENT: All operations use conditional checks.
+ * Safe to run multiple times.
  */
 export class AddBreachAndPolicyTerms1734300000000 implements MigrationInterface {
   name = 'AddBreachAndPolicyTerms1734300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Create breach_severity enum
+    // Create the update_updated_at_column function if it doesn't exist
     await queryRunner.query(`
-      CREATE TYPE "breach_severity_enum" AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
+      CREATE OR REPLACE FUNCTION update_updated_at_column()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        NEW.updated_at = now();
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
     `);
 
-    // Create breach_status enum
+    // Create breach_severity enum (idempotent)
     await queryRunner.query(`
-      CREATE TYPE "breach_status_enum" AS ENUM (
-        'DETECTED', 'INVESTIGATING', 'CONFIRMED', 'CONTAINED', 'NOTIFIED', 'RESOLVED', 'CLOSED'
-      )
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'breach_severity_enum') THEN
+          CREATE TYPE "breach_severity_enum" AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
+        END IF;
+      END $$;
     `);
 
-    // Create breach_type enum
+    // Create breach_status enum (idempotent)
     await queryRunner.query(`
-      CREATE TYPE "breach_type_enum" AS ENUM (
-        'UNAUTHORIZED_ACCESS', 'DATA_EXFILTRATION', 'CREDENTIAL_COMPROMISE',
-        'SYSTEM_INTRUSION', 'INSIDER_THREAT', 'ACCIDENTAL_DISCLOSURE',
-        'LOST_DEVICE', 'RANSOMWARE', 'PHISHING', 'OTHER'
-      )
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'breach_status_enum') THEN
+          CREATE TYPE "breach_status_enum" AS ENUM (
+            'DETECTED', 'INVESTIGATING', 'CONFIRMED', 'CONTAINED', 'NOTIFIED', 'RESOLVED', 'CLOSED'
+          );
+        END IF;
+      END $$;
     `);
 
-    // Create policy_terms_type enum
+    // Create breach_type enum (idempotent)
     await queryRunner.query(`
-      CREATE TYPE "policy_terms_type_enum" AS ENUM ('TPO', 'COMPREHENSIVE')
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'breach_type_enum') THEN
+          CREATE TYPE "breach_type_enum" AS ENUM (
+            'UNAUTHORIZED_ACCESS', 'DATA_EXFILTRATION', 'CREDENTIAL_COMPROMISE',
+            'SYSTEM_INTRUSION', 'INSIDER_THREAT', 'ACCIDENTAL_DISCLOSURE',
+            'LOST_DEVICE', 'RANSOMWARE', 'PHISHING', 'OTHER'
+          );
+        END IF;
+      END $$;
+    `);
+
+    // Create policy_terms_type enum (idempotent)
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'policy_terms_type_enum') THEN
+          CREATE TYPE "policy_terms_type_enum" AS ENUM ('TPO', 'COMPREHENSIVE');
+        END IF;
+      END $$;
     `);
 
     // Create breach_incidents table
     await queryRunner.query(`
-      CREATE TABLE "breach_incidents" (
+      CREATE TABLE IF NOT EXISTS "breach_incidents" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "incident_ref" varchar(50) NOT NULL,
         "breach_type" "breach_type_enum" NOT NULL,
@@ -77,18 +111,18 @@ export class AddBreachAndPolicyTerms1734300000000 implements MigrationInterface 
 
     // Create breach_incidents indexes
     await queryRunner.query(`
-      CREATE INDEX "IDX_breach_incidents_status_severity" ON "breach_incidents" ("status", "severity")
+      CREATE INDEX IF NOT EXISTS "IDX_breach_incidents_status_severity" ON "breach_incidents" ("status", "severity")
     `);
     await queryRunner.query(`
-      CREATE INDEX "IDX_breach_incidents_created_at" ON "breach_incidents" ("created_at")
+      CREATE INDEX IF NOT EXISTS "IDX_breach_incidents_created_at" ON "breach_incidents" ("created_at")
     `);
     await queryRunner.query(`
-      CREATE INDEX "IDX_breach_incidents_detected_at" ON "breach_incidents" ("detected_at")
+      CREATE INDEX IF NOT EXISTS "IDX_breach_incidents_detected_at" ON "breach_incidents" ("detected_at")
     `);
 
     // Create policy_terms table
     await queryRunner.query(`
-      CREATE TABLE "policy_terms" (
+      CREATE TABLE IF NOT EXISTS "policy_terms" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "version" varchar(20) NOT NULL,
         "type" "policy_terms_type_enum" NOT NULL DEFAULT 'TPO',
@@ -119,18 +153,18 @@ export class AddBreachAndPolicyTerms1734300000000 implements MigrationInterface 
 
     // Create policy_terms indexes
     await queryRunner.query(`
-      CREATE INDEX "IDX_policy_terms_version" ON "policy_terms" ("version")
+      CREATE INDEX IF NOT EXISTS "IDX_policy_terms_version" ON "policy_terms" ("version")
     `);
     await queryRunner.query(`
-      CREATE INDEX "IDX_policy_terms_type_effective" ON "policy_terms" ("type", "effective_from")
+      CREATE INDEX IF NOT EXISTS "IDX_policy_terms_type_effective" ON "policy_terms" ("type", "effective_from")
     `);
     await queryRunner.query(`
-      CREATE INDEX "IDX_policy_terms_is_active" ON "policy_terms" ("is_active")
+      CREATE INDEX IF NOT EXISTS "IDX_policy_terms_is_active" ON "policy_terms" ("is_active")
     `);
 
     // Create policy_terms_acknowledgments table
     await queryRunner.query(`
-      CREATE TABLE "policy_terms_acknowledgments" (
+      CREATE TABLE IF NOT EXISTS "policy_terms_acknowledgments" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),
         "user_id" uuid NOT NULL,
         "terms_id" uuid NOT NULL,
@@ -148,16 +182,19 @@ export class AddBreachAndPolicyTerms1734300000000 implements MigrationInterface 
 
     // Create policy_terms_acknowledgments indexes
     await queryRunner.query(`
-      CREATE INDEX "IDX_policy_terms_ack_user_terms" ON "policy_terms_acknowledgments" ("user_id", "terms_id")
+      CREATE INDEX IF NOT EXISTS "IDX_policy_terms_ack_user_terms" ON "policy_terms_acknowledgments" ("user_id", "terms_id")
     `);
     await queryRunner.query(`
-      CREATE INDEX "IDX_policy_terms_ack_user_date" ON "policy_terms_acknowledgments" ("user_id", "acknowledged_at")
+      CREATE INDEX IF NOT EXISTS "IDX_policy_terms_ack_user_date" ON "policy_terms_acknowledgments" ("user_id", "acknowledged_at")
     `);
     await queryRunner.query(`
-      CREATE INDEX "IDX_policy_terms_ack_terms" ON "policy_terms_acknowledgments" ("terms_id")
+      CREATE INDEX IF NOT EXISTS "IDX_policy_terms_ack_terms" ON "policy_terms_acknowledgments" ("terms_id")
     `);
 
-    // Add update trigger for updated_at
+    // Add update trigger for updated_at (idempotent: drop first, then create)
+    await queryRunner.query(`
+      DROP TRIGGER IF EXISTS update_breach_incidents_updated_at ON breach_incidents
+    `);
     await queryRunner.query(`
       CREATE TRIGGER update_breach_incidents_updated_at
         BEFORE UPDATE ON breach_incidents
@@ -165,6 +202,9 @@ export class AddBreachAndPolicyTerms1734300000000 implements MigrationInterface 
         EXECUTE FUNCTION update_updated_at_column()
     `);
 
+    await queryRunner.query(`
+      DROP TRIGGER IF EXISTS update_policy_terms_updated_at ON policy_terms
+    `);
     await queryRunner.query(`
       CREATE TRIGGER update_policy_terms_updated_at
         BEFORE UPDATE ON policy_terms

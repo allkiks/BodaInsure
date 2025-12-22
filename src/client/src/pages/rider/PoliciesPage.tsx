@@ -18,12 +18,13 @@ import { formatDate } from '@/lib/utils';
 import { policyApi } from '@/services/api/policy.api';
 import type { PolicyStatus } from '@/types';
 
+// GAP-015: Status config uses UPPERCASE to match server/types
 const statusConfig: Record<PolicyStatus, { label: string; icon: React.ReactNode; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  active: { label: 'Active', icon: <CheckCircle className="h-3 w-3" />, variant: 'default' },
-  pending: { label: 'Pending', icon: <Clock className="h-3 w-3" />, variant: 'secondary' },
-  expired: { label: 'Expired', icon: <AlertCircle className="h-3 w-3" />, variant: 'outline' },
-  cancelled: { label: 'Cancelled', icon: <AlertCircle className="h-3 w-3" />, variant: 'destructive' },
-  lapsed: { label: 'Lapsed', icon: <AlertCircle className="h-3 w-3" />, variant: 'destructive' },
+  ACTIVE: { label: 'Active', icon: <CheckCircle className="h-3 w-3" />, variant: 'default' },
+  PENDING: { label: 'Pending', icon: <Clock className="h-3 w-3" />, variant: 'secondary' },
+  EXPIRED: { label: 'Expired', icon: <AlertCircle className="h-3 w-3" />, variant: 'outline' },
+  CANCELLED: { label: 'Cancelled', icon: <AlertCircle className="h-3 w-3" />, variant: 'destructive' },
+  LAPSED: { label: 'Lapsed', icon: <AlertCircle className="h-3 w-3" />, variant: 'destructive' },
 };
 
 export default function PoliciesPage() {
@@ -49,7 +50,8 @@ export default function PoliciesPage() {
   }
 
   const policies = data?.data ?? [];
-  const activePolicies = policies.filter((p) => p.status === 'active');
+  // GAP-015: Use UPPERCASE status constants
+  const activePolicies = policies.filter((p) => p.status === 'ACTIVE');
   const hasActivePolicy = activePolicies.length > 0;
 
   return (
@@ -110,7 +112,8 @@ export default function PoliciesPage() {
           <h2 className="text-lg font-semibold">All Policies</h2>
           {policies.map((policy) => {
             const config = statusConfig[policy.status];
-            const daysRemaining = policy.status === 'active'
+            // GAP-015: Use UPPERCASE status constant
+            const daysRemaining = policy.status === 'ACTIVE'
               ? Math.ceil((new Date(policy.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
               : 0;
 
@@ -140,7 +143,7 @@ export default function PoliciesPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {policy.status === 'active' && daysRemaining > 0 && (
+                      {policy.status === 'ACTIVE' && daysRemaining > 0 && (
                         <div className="text-right">
                           <p className="text-2xl font-bold text-primary">{daysRemaining}</p>
                           <p className="text-xs text-muted-foreground">days left</p>

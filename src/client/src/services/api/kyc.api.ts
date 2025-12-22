@@ -42,12 +42,31 @@ export interface UserKycStatus {
   documents: {
     type: DocumentType;
     status: KycStatus;
-    uploadedAt?: string;
+    uploaded: boolean;
     rejectionReason?: string;
+    label?: string;
+    version?: number;
   }[];
-  requiredDocuments: DocumentType[];
   completedDocuments: number;
   totalRequired: number;
+}
+
+// Server response shape for KYC status
+interface ServerKycStatusResponse {
+  status: string;
+  documents: {
+    type: string;
+    status: string;
+    uploaded: boolean;
+    reason?: string;
+    label?: string;
+    version?: number;
+  }[];
+  documentsUploaded: number;
+  documentsRequired: number;
+  completionPercentage: number;
+  canProceedToPayment: boolean;
+  nextAction?: string;
 }
 
 export const kycApi = {
@@ -59,8 +78,23 @@ export const kycApi = {
    * Get current user's KYC status
    */
   getMyStatus: async (): Promise<UserKycStatus> => {
-    const response = await apiClient.get<{ data: UserKycStatus }>(API_ENDPOINTS.KYC_STATUS);
-    return response.data.data;
+    const response = await apiClient.get<{ data: ServerKycStatusResponse }>(API_ENDPOINTS.KYC_STATUS);
+    const serverData = response.data.data;
+
+    // Transform server response to client format
+    return {
+      overallStatus: serverData.status as KycStatus,
+      documents: serverData.documents.map(doc => ({
+        type: doc.type as DocumentType,
+        status: doc.status as KycStatus,
+        uploaded: doc.uploaded,
+        rejectionReason: doc.reason,
+        label: doc.label,
+        version: doc.version,
+      })),
+      completedDocuments: serverData.documentsUploaded,
+      totalRequired: serverData.documentsRequired,
+    };
   },
 
   /**
@@ -189,10 +223,38 @@ export const kycApi = {
   },
 
   /**
+   * Download document as blob (with auth header)
+   * Used for displaying images in the browser since <img src> doesn't send auth headers
+   */
+  downloadDocumentBlob: async (id: string): Promise<string> => {
+    try {
+      const response = await apiClient.get(
+        `${API_ENDPOINTS.KYC_DOCUMENTS}/${id}/download`,
+        { responseType: 'blob' }
+      );
+
+      // Verify we got an image blob, not a JSON error
+      const blob = response.data as Blob;
+      if (!blob.type.startsWith('image/')) {
+        // Try to read the error message from the blob
+        const text = await blob.text();
+        console.error('[KYC] Download returned non-image:', text);
+        throw new Error('Document download failed - file not found or access denied');
+      }
+
+      // Create an object URL from the blob for use in <img src>
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('[KYC] Document download error:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Approve KYC document
    */
   approveDocument: async (id: string): Promise<void> => {
-    await apiClient.patch(`${API_ENDPOINTS.KYC_DOCUMENTS}/${id}/review`, { status: 'approved' });
+    await apiClient.patch(`${API_ENDPOINTS.KYC_DOCUMENTS}/${id}/review`, { status: 'APPROVED' });
   },
 
   /**
@@ -200,7 +262,7 @@ export const kycApi = {
    */
   rejectDocument: async (id: string, reason: string): Promise<void> => {
     await apiClient.patch(`${API_ENDPOINTS.KYC_DOCUMENTS}/${id}/review`, {
-      status: 'rejected',
+      status: 'REJECTED',
       rejectionReason: reason,
     });
   },

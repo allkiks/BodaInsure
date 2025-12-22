@@ -73,7 +73,7 @@ const adminNavItems: NavItem[] = [
     label: 'KYC Review',
     path: '/kyc',
     icon: <FileCheck className="h-5 w-5" />,
-    roles: ['platform_admin'],
+    roles: ['platform_admin', 'kba_admin', 'sacco_admin'],
   },
   {
     label: 'Reports',
@@ -171,7 +171,10 @@ export function Sidebar() {
                   </button>
                   {expandedItems.includes(item.label) && (
                     <ul className="ml-4 mt-1 space-y-1 border-l pl-4">
-                      {item.children.map((child) => (
+                      {/* GAP-006: Filter child items by role as well */}
+                      {item.children
+                        .filter((child) => !child.roles || child.roles.includes(user?.role as UserRole))
+                        .map((child) => (
                         <li key={child.path}>
                           <Link
                             to={child.path}

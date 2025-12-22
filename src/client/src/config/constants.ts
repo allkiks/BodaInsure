@@ -43,6 +43,7 @@ export const PAGINATION = {
 export const API_ENDPOINTS = {
   // Auth
   AUTH_LOGIN: '/auth/login',
+  AUTH_REGISTER: '/auth/register',
   AUTH_ADMIN_LOGIN: '/auth/admin/login',
   AUTH_VERIFY_OTP: '/auth/otp/verify',
   AUTH_REFRESH: '/auth/refresh',
@@ -108,30 +109,91 @@ export const USER_ROLES = {
   VIEWER: 'viewer',
 } as const;
 
-// Policy statuses
+// GAP-015: Policy statuses - standardized to UPPERCASE (matching server)
 export const POLICY_STATUSES = {
-  PENDING: 'pending',
-  ACTIVE: 'active',
-  EXPIRED: 'expired',
-  CANCELLED: 'cancelled',
-  LAPSED: 'lapsed',
+  PENDING: 'PENDING',
+  ACTIVE: 'ACTIVE',
+  EXPIRED: 'EXPIRED',
+  CANCELLED: 'CANCELLED',
+  LAPSED: 'LAPSED',
 } as const;
 
-// KYC statuses
+// GAP-015: KYC statuses - standardized to UPPERCASE (matching server)
 export const KYC_STATUSES = {
-  PENDING: 'pending',
-  APPROVED: 'approved',
-  REJECTED: 'rejected',
-  EXPIRED: 'expired',
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  EXPIRED: 'EXPIRED',
 } as const;
 
-// Payment statuses
+// GAP-015: Payment statuses - standardized to UPPERCASE (matching server)
 export const PAYMENT_STATUSES = {
-  PENDING: 'pending',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-  CANCELLED: 'cancelled',
+  PENDING: 'PENDING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED',
 } as const;
+
+// GAP-015: User statuses - standardized to UPPERCASE (matching server)
+export const USER_STATUSES = {
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
+  SUSPENDED: 'SUSPENDED',
+  PENDING: 'PENDING',
+} as const;
+
+/**
+ * GAP-015: Status normalization utility
+ * Use this to compare statuses that may come in different cases
+ */
+export function normalizeStatus<T extends string>(status: T | undefined | null): string {
+  return (status ?? '').toUpperCase();
+}
+
+/**
+ * GAP-015: Status comparison utility for case-insensitive matching
+ */
+export function statusEquals(status1: string | undefined | null, status2: string): boolean {
+  return normalizeStatus(status1) === status2.toUpperCase();
+}
+
+// Membership statuses (matches server enum)
+export const MEMBERSHIP_STATUSES = {
+  PENDING: 'PENDING',
+  ACTIVE: 'ACTIVE',
+  SUSPENDED: 'SUSPENDED',
+  EXPIRED: 'EXPIRED',
+  REVOKED: 'REVOKED',
+} as const;
+
+// Membership roles (matches server enum)
+export const MEMBERSHIP_ROLES = {
+  MEMBER: 'MEMBER',
+  OFFICIAL: 'OFFICIAL',
+  ADMIN: 'ADMIN',
+  CHAIRPERSON: 'CHAIRPERSON',
+  SECRETARY: 'SECRETARY',
+  TREASURER: 'TREASURER',
+} as const;
+
+// Human-readable labels for membership roles
+export const MEMBERSHIP_ROLE_LABELS: Record<string, string> = {
+  MEMBER: 'Member',
+  OFFICIAL: 'Official',
+  ADMIN: 'Admin',
+  CHAIRPERSON: 'Chairperson',
+  SECRETARY: 'Secretary',
+  TREASURER: 'Treasurer',
+};
+
+// Human-readable labels for membership statuses
+export const MEMBERSHIP_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Pending',
+  ACTIVE: 'Active',
+  SUSPENDED: 'Suspended',
+  EXPIRED: 'Expired',
+  REVOKED: 'Revoked',
+};
 
 // Navigation items
 export const NAV_ITEMS = [

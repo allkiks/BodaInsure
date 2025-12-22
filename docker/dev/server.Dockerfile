@@ -29,7 +29,7 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo 'echo "BodaInsure Server Starting..."' >> /docker-entrypoint.sh && \
     echo 'echo "========================================="' >> /docker-entrypoint.sh && \
     echo '' >> /docker-entrypoint.sh && \
-    echo 'echo "[1/4] Waiting for PostgreSQL..."' >> /docker-entrypoint.sh && \
+    echo 'echo "[1/5] Waiting for PostgreSQL..."' >> /docker-entrypoint.sh && \
     echo 'MAX_RETRIES=30' >> /docker-entrypoint.sh && \
     echo 'RETRY_COUNT=0' >> /docker-entrypoint.sh && \
     echo 'until pg_isready -h "${DB_HOST:-postgres}" -p "${DB_PORT:-5432}" -U "${DB_USERNAME:-bodainsure}" > /dev/null 2>&1 || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do' >> /docker-entrypoint.sh && \
@@ -43,7 +43,7 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo 'fi' >> /docker-entrypoint.sh && \
     echo 'echo "  PostgreSQL is ready!"' >> /docker-entrypoint.sh && \
     echo '' >> /docker-entrypoint.sh && \
-    echo 'echo "[2/4] Waiting for Redis..."' >> /docker-entrypoint.sh && \
+    echo 'echo "[2/5] Waiting for Redis..."' >> /docker-entrypoint.sh && \
     echo 'RETRY_COUNT=0' >> /docker-entrypoint.sh && \
     echo 'until nc -z "${REDIS_HOST:-redis}" "${REDIS_PORT:-6379}" > /dev/null 2>&1 || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do' >> /docker-entrypoint.sh && \
     echo '  RETRY_COUNT=$((RETRY_COUNT + 1))' >> /docker-entrypoint.sh && \
@@ -56,11 +56,15 @@ RUN echo '#!/bin/sh' > /docker-entrypoint.sh && \
     echo 'fi' >> /docker-entrypoint.sh && \
     echo 'echo "  Redis is ready!"' >> /docker-entrypoint.sh && \
     echo '' >> /docker-entrypoint.sh && \
-    echo 'echo "[3/4] Running database migrations..."' >> /docker-entrypoint.sh && \
+    echo 'echo "[3/5] Running database migrations..."' >> /docker-entrypoint.sh && \
     echo 'npm run migration:run 2>&1 || echo "  No pending migrations"' >> /docker-entrypoint.sh && \
     echo 'echo "  Migrations complete!"' >> /docker-entrypoint.sh && \
     echo '' >> /docker-entrypoint.sh && \
-    echo 'echo "[4/4] Starting application..."' >> /docker-entrypoint.sh && \
+    echo 'echo "[4/5] Running database seeding..."' >> /docker-entrypoint.sh && \
+    echo 'npm run seed 2>&1 || echo "  Seeding complete (data may already exist)"' >> /docker-entrypoint.sh && \
+    echo 'echo "  Seeding complete!"' >> /docker-entrypoint.sh && \
+    echo '' >> /docker-entrypoint.sh && \
+    echo 'echo "[5/5] Starting application..."' >> /docker-entrypoint.sh && \
     echo 'echo "========================================="' >> /docker-entrypoint.sh && \
     echo 'exec "$@"' >> /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh

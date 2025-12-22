@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull, DataSource } from 'typeorm';
 import {
@@ -7,6 +7,8 @@ import {
   OrganizationStatus,
 } from '../entities/organization.entity.js';
 import { MembershipStatus } from '../entities/membership.entity.js';
+import type { ICurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import { EncryptionService } from '../../../common/services/encryption.service.js';
 
 /**
  * Create organization request
@@ -121,6 +123,7 @@ export class OrganizationService {
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
     private readonly dataSource: DataSource,
+    private readonly encryptionService: EncryptionService,
   ) {}
 
   /**
@@ -161,8 +164,9 @@ export class OrganizationService {
 
   /**
    * Get organization by ID
+   * GAP-004: Enforce role-based access - SACCO_admin can only view their own org or parent
    */
-  async getById(id: string): Promise<Organization> {
+  async getById(id: string, user?: ICurrentUser): Promise<Organization> {
     const organization = await this.organizationRepository.findOne({
       where: { id, deletedAt: IsNull() },
       relations: ['parent'],
@@ -170,6 +174,36 @@ export class OrganizationService {
 
     if (!organization) {
       throw new NotFoundException(`Organization not found: ${id}`);
+    }
+
+    // GAP-004: Enforce role-based access
+    if (user) {
+      if (user.role === 'sacco_admin') {
+        // SACCO admin can only view their own org or parent Umbrella Body
+        if (user.organizationId) {
+          const userOrg = await this.organizationRepository.findOne({
+            where: { id: user.organizationId },
+            select: ['id', 'parentId'],
+          });
+
+          const allowedIds = [user.organizationId];
+          if (userOrg?.parentId) {
+            allowedIds.push(userOrg.parentId);
+          }
+
+          if (!allowedIds.includes(id)) {
+            throw new ForbiddenException('You can only access your own organization or parent umbrella body');
+          }
+        } else {
+          throw new ForbiddenException('You are not associated with any organization');
+        }
+      } else if (user.role === 'kba_admin') {
+        // KBA admin can view their own org or child SACCOs
+        if (user.organizationId !== id && organization.parentId !== user.organizationId) {
+          throw new ForbiddenException('You can only access your organization or child SACCOs');
+        }
+      }
+      // platform_admin and insurance_admin can view all organizations
     }
 
     return organization;
@@ -271,6 +305,7 @@ export class OrganizationService {
 
   /**
    * List organizations with filtering
+   * GAP-004: Add user-scoped filtering based on role
    */
   async list(options?: {
     type?: OrganizationType;
@@ -280,6 +315,7 @@ export class OrganizationService {
     search?: string;
     page?: number;
     limit?: number;
+    user?: ICurrentUser;
   }): Promise<{ organizations: OrganizationSummary[]; total: number }> {
     const {
       type,
@@ -289,11 +325,52 @@ export class OrganizationService {
       search,
       page = 1,
       limit = 20,
+      user,
     } = options ?? {};
 
     const query = this.organizationRepository
       .createQueryBuilder('org')
       .where('org.deleted_at IS NULL');
+
+    // GAP-004: Apply role-based organization scope filtering
+    if (user) {
+      if (user.role === 'sacco_admin') {
+        // SACCO admin: See their own SACCO and parent Umbrella Body
+        if (user.organizationId) {
+          // Get parent ID for the user's organization
+          const userOrg = await this.organizationRepository.findOne({
+            where: { id: user.organizationId },
+            select: ['id', 'parentId'],
+          });
+
+          if (userOrg?.parentId) {
+            // Show own SACCO and parent Umbrella Body
+            query.andWhere(
+              '(org.id = :userOrgId OR org.id = :parentOrgId)',
+              { userOrgId: user.organizationId, parentOrgId: userOrg.parentId },
+            );
+          } else {
+            // No parent, only show own organization
+            query.andWhere('org.id = :userOrgId', { userOrgId: user.organizationId });
+          }
+        } else {
+          // SACCO admin without organization sees nothing
+          query.andWhere('1 = 0');
+        }
+      } else if (user.role === 'kba_admin') {
+        // KBA admin: See KBA and child SACCOs
+        if (user.organizationId) {
+          query.andWhere(
+            '(org.id = :userOrgId OR org.parent_id = :userOrgId)',
+            { userOrgId: user.organizationId },
+          );
+        } else {
+          // KBA admin without organization sees nothing
+          query.andWhere('1 = 0');
+        }
+      }
+      // platform_admin and insurance_admin see all organizations (no filter)
+    }
 
     if (type) {
       query.andWhere('org.type = :type', { type });
@@ -326,9 +403,12 @@ export class OrganizationService {
       .take(limit)
       .getManyAndCount();
 
-    // Get child counts for each organization
+    // Get child counts and member counts for each organization
     const orgIds = organizations.map((o) => o.id);
-    const childCounts = await this.getChildCounts(orgIds);
+    const [childCounts, memberCounts] = await Promise.all([
+      this.getChildCounts(orgIds),
+      this.getMemberCounts(orgIds),
+    ]);
 
     const summaries: OrganizationSummary[] = organizations.map((org) => ({
       id: org.id,
@@ -337,7 +417,7 @@ export class OrganizationService {
       type: org.type,
       status: org.status,
       countyCode: org.countyCode ?? null,
-      memberCount: org.verifiedMembers,
+      memberCount: memberCounts[org.id] ?? 0,
       childCount: childCounts[org.id] ?? 0,
     }));
 
@@ -494,6 +574,29 @@ export class OrganizationService {
   }
 
   /**
+   * Get actual member counts from memberships table for organizations
+   */
+  private async getMemberCounts(orgIds: string[]): Promise<Record<string, number>> {
+    if (orgIds.length === 0) return {};
+
+    const results = await this.dataSource.query(
+      `SELECT organization_id as "orgId", COUNT(*) as count
+       FROM memberships
+       WHERE organization_id = ANY($1)
+         AND status = 'ACTIVE'
+       GROUP BY organization_id`,
+      [orgIds],
+    );
+
+    const counts: Record<string, number> = {};
+    for (const row of results) {
+      counts[row.orgId] = parseInt(row.count, 10);
+    }
+
+    return counts;
+  }
+
+  /**
    * Get statistics for a specific organization
    */
   async getOrganizationStats(id: string): Promise<SingleOrganizationStats> {
@@ -534,6 +637,7 @@ export class OrganizationService {
 
   /**
    * Get members of an organization
+   * GAP-004: Enforce role-based access - SACCO_admin can only view their own org members
    */
   async getMembers(
     organizationId: string,
@@ -542,10 +646,34 @@ export class OrganizationService {
       search?: string;
       page?: number;
       limit?: number;
+      user?: ICurrentUser;
     },
   ): Promise<{ members: MemberWithUser[]; total: number }> {
     // Verify organization exists
     await this.getById(organizationId);
+
+    // GAP-004: Enforce role-based access to members
+    const { user } = options ?? {};
+    if (user) {
+      if (user.role === 'sacco_admin') {
+        // SACCO admin can only view members of their own organization
+        if (user.organizationId !== organizationId) {
+          throw new ForbiddenException('You can only view members of your own organization');
+        }
+      } else if (user.role === 'kba_admin') {
+        // KBA admin can view members of their own org or child SACCOs
+        if (user.organizationId !== organizationId) {
+          const targetOrg = await this.organizationRepository.findOne({
+            where: { id: organizationId },
+            select: ['id', 'parentId'],
+          });
+          if (targetOrg?.parentId !== user.organizationId) {
+            throw new ForbiddenException('You can only view members of your organization or child SACCOs');
+          }
+        }
+      }
+      // platform_admin and insurance_admin can view all members
+    }
 
     const { status, search, page = 1, limit = 20 } = options ?? {};
 
@@ -598,20 +726,28 @@ export class OrganizationService {
 
     const rows = await this.dataSource.query(query, params);
 
-    const members: MemberWithUser[] = rows.map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      userId: row.userId as string,
-      role: row.role as string,
-      status: row.status as string,
-      memberNumber: row.memberNumber as string | null,
-      joinedAt: row.joinedAt as Date | null,
-      user: {
-        id: row.user_id as string,
-        phone: row.user_phone as string,
-        fullName: row.user_fullName as string | null,
-        kycStatus: row.user_kycStatus as string,
-      },
-    }));
+    const members: MemberWithUser[] = rows.map((row: Record<string, unknown>) => {
+      // Decrypt fullName if it's encrypted (PII field)
+      const rawFullName = row.user_fullName as string | null;
+      const decryptedFullName = rawFullName
+        ? this.encryptionService.decrypt(rawFullName)
+        : null;
+
+      return {
+        id: row.id as string,
+        userId: row.userId as string,
+        role: row.role as string,
+        status: row.status as string,
+        memberNumber: row.memberNumber as string | null,
+        joinedAt: row.joinedAt as Date | null,
+        user: {
+          id: row.user_id as string,
+          phone: row.user_phone as string,
+          fullName: decryptedFullName,
+          kycStatus: row.user_kycStatus as string,
+        },
+      };
+    });
 
     return { members, total };
   }

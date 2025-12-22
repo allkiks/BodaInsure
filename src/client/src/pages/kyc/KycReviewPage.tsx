@@ -60,10 +60,12 @@ export default function KycReviewPage() {
     enabled: !!id,
   });
 
-  const { data: docUrl } = useQuery({
+  // Get presigned URL for document viewing (URL is directly accessible without auth)
+  const { data: docUrl, isLoading: isLoadingUrl } = useQuery({
     queryKey: ['kyc', 'document', id, 'url'],
     queryFn: () => kycApi.getDocumentUrl(id!),
     enabled: !!id,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   const approveMutation = useMutation({
@@ -178,7 +180,12 @@ export default function KycReviewPage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-center overflow-auto rounded-lg border bg-muted/50 p-4" style={{ minHeight: '400px' }}>
-                {docUrl?.url ? (
+                {isLoadingUrl ? (
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <LoadingSpinner size="lg" />
+                    <p>Loading document...</p>
+                  </div>
+                ) : docUrl?.url ? (
                   <img
                     src={docUrl.url}
                     alt={documentTypeLabels[doc.type]}
@@ -190,7 +197,7 @@ export default function KycReviewPage() {
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <FileCheck className="h-12 w-12" />
-                    <p>Loading document...</p>
+                    <p>Failed to load document</p>
                   </div>
                 )}
               </div>

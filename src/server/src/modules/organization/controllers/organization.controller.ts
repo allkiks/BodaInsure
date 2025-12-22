@@ -19,7 +19,7 @@ import {
   ApiBearerAuth,
   ApiParam,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../identity/guards/jwt-auth.guard.js';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../../../common/guards/roles.guard.js';
 import { Roles } from '../../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
@@ -69,14 +69,19 @@ export class OrganizationController {
 
   /**
    * Get organization by ID
+   * GAP-004: SACCO_admin can only view their own org or parent Umbrella Body
    */
   @Get(':id')
   @ApiOperation({ summary: 'Get organization by ID' })
   @ApiParam({ name: 'id', description: 'Organization ID' })
   @ApiResponse({ status: 200, description: 'Organization details' })
+  @ApiResponse({ status: 403, description: 'Forbidden - cannot access this organization' })
   @ApiResponse({ status: 404, description: 'Organization not found' })
-  async getById(@Param('id', ParseUUIDPipe) id: string) {
-    const organization = await this.organizationService.getById(id);
+  async getById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: ICurrentUser,
+  ) {
+    const organization = await this.organizationService.getById(id, user);
     return {
       id: organization.id,
       code: organization.code,
@@ -120,10 +125,26 @@ export class OrganizationController {
 
   /**
    * List organizations with filtering
+   * GAP-004: Filter organizations based on user role and scope
    */
   @Get()
-  async list(@Query() query: OrganizationQueryDto) {
-    const { organizations, total } = await this.organizationService.list(query);
+  async list(
+    @Query() query: OrganizationQueryDto,
+    @CurrentUser() user: ICurrentUser,
+  ) {
+    // Merge q into search for compatibility
+    const search = query.search || query.q;
+
+    const { organizations, total } = await this.organizationService.list({
+      type: query.type,
+      status: query.status,
+      countyCode: query.countyCode,
+      parentId: query.parentId,
+      search,
+      page: query.page,
+      limit: query.limit,
+      user,
+    });
     return {
       organizations,
       total,
@@ -296,11 +317,13 @@ export class OrganizationController {
 
   /**
    * Get organization members
+   * GAP-004: SACCO_admin can only view members of their own organization
    */
   @Get(':id/members')
   @ApiOperation({ summary: 'Get organization members' })
   @ApiParam({ name: 'id', description: 'Organization ID' })
   @ApiResponse({ status: 200, description: 'Organization members' })
+  @ApiResponse({ status: 403, description: 'Forbidden - cannot access members of this organization' })
   @ApiResponse({ status: 404, description: 'Organization not found' })
   async getMembers(
     @Param('id', ParseUUIDPipe) id: string,
@@ -308,12 +331,14 @@ export class OrganizationController {
     @Query('q') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @CurrentUser() user?: ICurrentUser,
   ) {
     const { members, total } = await this.organizationService.getMembers(id, {
       status: status as MembershipStatus | undefined,
       search,
       page: page ? parseInt(page, 10) : 1,
       limit: limit ? parseInt(limit, 10) : 20,
+      user,
     });
 
     return {

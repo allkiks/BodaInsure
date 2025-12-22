@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Building2,
   Users,
+  UserPlus,
   Phone,
   Mail,
   MapPin,
@@ -45,7 +46,17 @@ import { organizationsApi } from '@/services/api/organizations.api';
 import { useAuthStore } from '@/stores/authStore';
 import { maskPhone } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
-import type { OrganizationType, OrganizationStatus } from '@/types';
+import { MEMBERSHIP_STATUS_LABELS, MEMBERSHIP_ROLE_LABELS } from '@/config/constants';
+import {
+  ApproveMemberDialog,
+  SuspendMemberDialog,
+  ReactivateMemberDialog,
+  RevokeMemberDialog,
+  EditMemberRoleDialog,
+  AddMemberDialog,
+  CreateUserDialog,
+} from './components/MemberActionDialogs';
+import type { OrganizationType, OrganizationStatus, OrganizationMember } from '@/types';
 
 const typeLabels: Record<OrganizationType, string> = {
   UMBRELLA_BODY: 'Umbrella Body',
@@ -62,10 +73,14 @@ const statusColors: Record<OrganizationStatus, string> = {
 };
 
 const memberStatusColors: Record<string, string> = {
-  active: 'bg-green-100 text-green-800',
-  inactive: 'bg-gray-100 text-gray-800',
-  pending: 'bg-yellow-100 text-yellow-800',
+  ACTIVE: 'bg-green-100 text-green-800',
+  PENDING: 'bg-yellow-100 text-yellow-800',
+  SUSPENDED: 'bg-red-100 text-red-800',
+  EXPIRED: 'bg-gray-100 text-gray-800',
+  REVOKED: 'bg-gray-100 text-gray-800',
 };
+
+type MemberDialogType = 'approve' | 'suspend' | 'reactivate' | 'revoke' | 'editRole' | null;
 
 export default function OrganizationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -77,9 +92,26 @@ export default function OrganizationDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSuspendDialog, setShowSuspendDialog] = useState(false);
 
+  // Member action dialogs
+  const [memberDialogType, setMemberDialogType] = useState<MemberDialogType>(null);
+  const [selectedMember, setSelectedMember] = useState<OrganizationMember | null>(null);
+  const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
+  const [showCreateUserDialog, setShowCreateUserDialog] = useState(false);
+
   const isAdmin = user?.role === 'platform_admin';
   const isKbaAdmin = user?.role === 'kba_admin';
-  const canManage = isAdmin || isKbaAdmin;
+  const isSaccoAdmin = user?.role === 'sacco_admin';
+  const canManage = isAdmin || isKbaAdmin || isSaccoAdmin;
+
+  const openMemberDialog = (dialogType: MemberDialogType, member: OrganizationMember) => {
+    setSelectedMember(member);
+    setMemberDialogType(dialogType);
+  };
+
+  const closeMemberDialog = () => {
+    setMemberDialogType(null);
+    setSelectedMember(null);
+  };
 
   const { data: org, isLoading: orgLoading } = useQuery({
     queryKey: ['organization', id],
@@ -424,10 +456,24 @@ export default function OrganizationDetailPage() {
                 {members?.meta.total ?? 0} member(s)
               </CardDescription>
             </div>
-            <Button variant="outline" onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" />
-              Export CSV
-            </Button>
+            <div className="flex gap-2">
+              {canManage && (
+                <>
+                  <Button onClick={() => setShowCreateUserDialog(true)}>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Create User
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowAddMemberDialog(true)}>
+                    <Users className="mr-2 h-4 w-4" />
+                    Add Existing
+                  </Button>
+                </>
+              )}
+              <Button variant="outline" onClick={handleExport}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -452,31 +498,90 @@ export default function OrganizationDetailPage() {
           ) : members?.data && members.data.length > 0 ? (
             <div className="space-y-2">
               {members.data.map((member) => (
-                <button
+                <div
                   key={member.id}
-                  onClick={() => navigate(`/users/${member.id}`)}
-                  className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-accent"
+                  className="flex items-center justify-between rounded-lg border p-4 transition-colors hover:bg-accent"
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">
-                        {member.firstName && member.lastName
-                          ? `${member.firstName} ${member.lastName}`
-                          : 'No name'}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {maskPhone(member.phone)}
-                      </p>
+                  <button
+                    onClick={() => navigate(`/users/${member.id}`)}
+                    className="flex-1 text-left"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <p className="font-medium">
+                          {member.firstName && member.lastName
+                            ? `${member.firstName} ${member.lastName}`
+                            : member.firstName || member.lastName || 'No name'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {maskPhone(member.phone)}
+                          {member.membership.memberNumber && (
+                            <span className="ml-2 text-xs">
+                              #{member.membership.memberNumber}
+                            </span>
+                          )}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={memberStatusColors[member.membership.status]}>
-                        {member.membership.status}
-                      </Badge>
-                      <Badge variant="outline">{member.membership.role}</Badge>
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <Badge className={memberStatusColors[member.membership.status]}>
+                      {MEMBERSHIP_STATUS_LABELS[member.membership.status] || member.membership.status}
+                    </Badge>
+                    <Badge variant="outline">
+                      {MEMBERSHIP_ROLE_LABELS[member.membership.role] || member.membership.role}
+                    </Badge>
+                    {canManage && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {member.membership.status === 'PENDING' && (
+                            <DropdownMenuItem onClick={() => openMemberDialog('approve', member)}>
+                              <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                              Approve
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => openMemberDialog('editRole', member)}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit Role
+                          </DropdownMenuItem>
+                          {member.membership.status === 'ACTIVE' && (
+                            <DropdownMenuItem onClick={() => openMemberDialog('suspend', member)}>
+                              <XCircle className="mr-2 h-4 w-4 text-yellow-600" />
+                              Suspend
+                            </DropdownMenuItem>
+                          )}
+                          {member.membership.status === 'SUSPENDED' && (
+                            <DropdownMenuItem onClick={() => openMemberDialog('reactivate', member)}>
+                              <RefreshCw className="mr-2 h-4 w-4 text-blue-600" />
+                              Reactivate
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => openMemberDialog('revoke', member)}
+                            className="text-red-600"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Revoke Membership
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => navigate(`/users/${member.id}`)}
+                    >
                       <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                    </div>
+                    </Button>
                   </div>
-                </button>
+                </div>
               ))}
 
               {/* Pagination */}
@@ -561,6 +666,52 @@ export default function OrganizationDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Member Action Dialogs */}
+      <ApproveMemberDialog
+        open={memberDialogType === 'approve'}
+        onOpenChange={(open) => !open && closeMemberDialog()}
+        member={selectedMember}
+        organizationId={id!}
+      />
+      <SuspendMemberDialog
+        open={memberDialogType === 'suspend'}
+        onOpenChange={(open) => !open && closeMemberDialog()}
+        member={selectedMember}
+        organizationId={id!}
+      />
+      <ReactivateMemberDialog
+        open={memberDialogType === 'reactivate'}
+        onOpenChange={(open) => !open && closeMemberDialog()}
+        member={selectedMember}
+        organizationId={id!}
+      />
+      <RevokeMemberDialog
+        open={memberDialogType === 'revoke'}
+        onOpenChange={(open) => !open && closeMemberDialog()}
+        member={selectedMember}
+        organizationId={id!}
+      />
+      <EditMemberRoleDialog
+        open={memberDialogType === 'editRole'}
+        onOpenChange={(open) => !open && closeMemberDialog()}
+        member={selectedMember}
+        organizationId={id!}
+      />
+      <AddMemberDialog
+        open={showAddMemberDialog}
+        onOpenChange={setShowAddMemberDialog}
+        organizationId={id!}
+      />
+      <CreateUserDialog
+        open={showCreateUserDialog}
+        onOpenChange={setShowCreateUserDialog}
+        preSelectedOrganizationId={id}
+        onSuccess={() => {
+          // Refresh member list after user creation
+          queryClient.invalidateQueries({ queryKey: ['organization', id, 'members'] });
+        }}
+      />
     </div>
   );
 }

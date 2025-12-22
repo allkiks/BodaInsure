@@ -108,15 +108,17 @@ export class DashboardService {
       ? `AND u.id IN (SELECT user_id FROM memberships WHERE organization_id = '${organizationId}')`
       : '';
 
+    // Only count rider users for enrollment metrics (exclude admin users)
     const [userStats] = await this.dataSource.query(`
       SELECT
         COUNT(*) as total_users,
-        COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_users,
         COUNT(*) FILTER (WHERE created_at >= $1) as new_today,
         COUNT(*) FILTER (WHERE created_at >= $2) as new_this_week,
         COUNT(*) FILTER (WHERE created_at >= $3) as new_this_month
       FROM users u
-      WHERE deleted_at IS NULL ${orgFilter}
+      WHERE deleted_at IS NULL
+        AND role = 'rider'
+        ${orgFilter}
     `, [today, weekAgo, monthAgo]);
 
     const [kycStats] = await this.dataSource.query(`
@@ -125,7 +127,20 @@ export class DashboardService {
         COUNT(*) FILTER (WHERE kyc_status = 'APPROVED') as kyc_approved,
         COUNT(*) FILTER (WHERE kyc_status = 'REJECTED') as kyc_rejected
       FROM users u
-      WHERE deleted_at IS NULL ${orgFilter}
+      WHERE deleted_at IS NULL
+        AND role = 'rider'
+        ${orgFilter}
+    `);
+
+    // Count users who have actually paid deposit (have wallet with total_deposited >= 1048)
+    const [depositStats] = await this.dataSource.query(`
+      SELECT COUNT(DISTINCT w.user_id) as users_with_deposit
+      FROM wallets w
+      INNER JOIN users u ON u.id = w.user_id
+      WHERE w.total_deposited >= 1048
+        AND u.deleted_at IS NULL
+        AND u.role = 'rider'
+        ${orgFilter.replace('u.id', 'w.user_id')}
     `);
 
     // Note: county_code column doesn't exist in users table yet
@@ -134,7 +149,7 @@ export class DashboardService {
 
     return {
       totalUsers: parseInt(userStats?.total_users || '0', 10),
-      activeUsers: parseInt(userStats?.active_users || '0', 10),
+      activeUsers: parseInt(depositStats?.users_with_deposit || '0', 10), // Now correctly shows users with deposit paid
       newUsersToday: parseInt(userStats?.new_today || '0', 10),
       newUsersThisWeek: parseInt(userStats?.new_this_week || '0', 10),
       newUsersThisMonth: parseInt(userStats?.new_this_month || '0', 10),

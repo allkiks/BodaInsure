@@ -3,6 +3,7 @@ import {
   Logger,
   ConflictException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -13,17 +14,27 @@ import {
   KycStatus,
   Language,
 } from '../entities/user.entity.js';
+import { Organization } from '../../organization/entities/organization.entity.js';
+import {
+  Membership,
+  MembershipStatus,
+  MemberRole,
+} from '../../organization/entities/membership.entity.js';
 import { normalizePhoneToE164 } from '../../../common/utils/phone.util.js';
 
 export interface CreateUserData {
   phone: string;
   language?: Language;
   termsAccepted: boolean;
+  organizationId: string;
+  role?: UserRole;
+  passwordHash?: string;
 }
 
 /**
  * User Service
  * Handles user CRUD operations and status management
+ * GAP-004: All users must belong to an organization; riders must belong to a SACCO
  */
 @Injectable()
 export class UserService {
@@ -32,13 +43,42 @@ export class UserService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
+    @InjectRepository(Membership)
+    private readonly membershipRepository: Repository<Membership>,
   ) {}
 
   /**
    * Create a new user (registration)
+   * GAP-004: All users must belong to an organization; riders must belong to a SACCO
    */
   async createUser(data: CreateUserData): Promise<User> {
     const normalizedPhone = normalizePhoneToE164(data.phone);
+    const userRole = data.role ?? UserRole.RIDER;
+
+    // Validate organizationId is provided
+    if (!data.organizationId) {
+      throw new BadRequestException('Organization ID is required for registration');
+    }
+
+    // Fetch and validate organization
+    const organization = await this.organizationRepository.findOne({
+      where: { id: data.organizationId },
+    });
+
+    if (!organization) {
+      throw new BadRequestException('Invalid organization ID');
+    }
+
+    // Validate that riders must belong to a SACCO (child of umbrella body)
+    // A SACCO is identified by having a parentId (it's a child organization)
+    // Non-rider roles (admins) can belong to umbrella bodies
+    if (userRole === UserRole.RIDER && !organization.parentId) {
+      throw new BadRequestException(
+        'Riders must register with a SACCO organization, not an umbrella body',
+      );
+    }
 
     // Check for existing user
     const existingUser = await this.userRepository.findOne({
@@ -49,20 +89,40 @@ export class UserService {
       throw new ConflictException('Phone number already registered');
     }
 
+    // Determine initial status - ACTIVE if password is set, PENDING otherwise
+    const initialStatus = data.passwordHash ? UserStatus.ACTIVE : UserStatus.PENDING;
+
+    // Create user with organization reference
     const user = this.userRepository.create({
       phone: normalizedPhone,
-      status: UserStatus.PENDING,
-      role: UserRole.RIDER,
+      status: initialStatus,
+      role: userRole,
       kycStatus: KycStatus.PENDING,
       language: data.language ?? Language.ENGLISH,
       termsAcceptedAt: data.termsAccepted ? new Date() : undefined,
       consentGivenAt: data.termsAccepted ? new Date() : undefined,
       failedLoginAttempts: 0,
       reminderOptOut: false,
+      organizationId: data.organizationId,
+      passwordHash: data.passwordHash,
     });
 
     const savedUser = await this.userRepository.save(user);
-    this.logger.log(`User created: ***${normalizedPhone.slice(-4)}`);
+
+    // Create membership record linking user to organization
+    const membership = this.membershipRepository.create({
+      userId: savedUser.id,
+      organizationId: data.organizationId,
+      role: MemberRole.MEMBER,
+      status: MembershipStatus.ACTIVE,
+      joinedAt: new Date(),
+    });
+
+    await this.membershipRepository.save(membership);
+
+    this.logger.log(
+      `User created: ***${normalizedPhone.slice(-4)} in org ${organization.name}`,
+    );
 
     return savedUser;
   }

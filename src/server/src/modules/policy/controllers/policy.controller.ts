@@ -19,7 +19,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { JwtAuthGuard } from '../../identity/guards/jwt-auth.guard.js';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../../../common/guards/roles.guard.js';
 import { Roles } from '../../../common/decorators/roles.decorator.js';
 import { ROLES } from '../../../common/constants/index.js';
@@ -133,9 +133,9 @@ export class PolicyController {
   })
   async getMyPolicies(
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<{ data: PolicySummary[] }> {
-    const policies = await this.policyService.getUserPolicies(user.userId);
-    return { data: policies };
+  ): Promise<PolicySummary[]> {
+    // GAP-013: Return raw data, let TransformInterceptor wrap it
+    return this.policyService.getUserPolicies(user.userId);
   }
 
   /**

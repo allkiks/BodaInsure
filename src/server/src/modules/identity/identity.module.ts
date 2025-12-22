@@ -9,6 +9,8 @@ import { NotificationModule } from '../notification/notification.module.js';
 import { User } from './entities/user.entity.js';
 import { Otp } from './entities/otp.entity.js';
 import { Session } from './entities/session.entity.js';
+import { Organization } from '../organization/entities/organization.entity.js';
+import { Membership } from '../organization/entities/membership.entity.js';
 
 // Services
 import { AuthService } from './services/auth.service.js';
@@ -26,12 +28,12 @@ import { UserController } from './controllers/user.controller.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 
 // Guards
-import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 
 @Module({
   imports: [
     // Register entities with TypeORM
-    TypeOrmModule.forFeature([User, Otp, Session]),
+    TypeOrmModule.forFeature([User, Otp, Session, Organization, Membership]),
 
     // Notification module for SMS sending
     forwardRef(() => NotificationModule),

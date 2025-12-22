@@ -1,1 +1,1 @@
-export * from './jwt-auth.guard.js';
+export * from '../../../common/guards/jwt-auth.guard.js';

@@ -2,6 +2,8 @@ import { apiClient } from './client';
 import type {
   LoginRequest,
   LoginResponse,
+  RegisterRequest,
+  RegisterResponse,
   OtpVerifyRequest,
   OtpVerifyResponse,
   AdminLoginRequest,
@@ -11,12 +13,21 @@ import { API_ENDPOINTS } from '@/config/constants';
 
 export const authApi = {
   /**
-   * Initiate login with phone number
+   * Initiate login with phone number (for existing users)
    * Sends OTP to the provided phone
    */
   login: async (data: LoginRequest): Promise<LoginResponse> => {
     const response = await apiClient.post<LoginResponse>(API_ENDPOINTS.AUTH_LOGIN, data);
     return response.data;
+  },
+
+  /**
+   * Register a new rider with organization
+   * GAP-004: All riders must belong to a SACCO
+   */
+  register: async (data: RegisterRequest): Promise<RegisterResponse> => {
+    const response = await apiClient.post<{ data: RegisterResponse }>(API_ENDPOINTS.AUTH_REGISTER, data);
+    return response.data.data;
   },
 
   /**

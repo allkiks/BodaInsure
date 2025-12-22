@@ -149,6 +149,49 @@ export const organizationsApi = {
   },
 
   /**
+   * Get SACCOs (organizations with parentId - children of umbrella bodies)
+   * Used for rider registration organization selection
+   * Fetches all pages to ensure all SACCOs are returned
+   */
+  getSaccos: async (): Promise<Organization[]> => {
+    const allSaccos: Organization[] = [];
+    let page = 1;
+    const limit = 100; // Max allowed by server
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await apiClient.get<{ data: ServerOrganizationListResponse }>(
+        API_ENDPOINTS.ORGANIZATIONS,
+        {
+          params: {
+            type: 'SACCO',
+            status: 'ACTIVE',
+            limit,
+            page,
+          },
+        }
+      );
+      const data = response.data.data;
+      allSaccos.push(...data.organizations);
+      hasMore = page < data.totalPages;
+      page++;
+    }
+
+    return allSaccos;
+  },
+
+  /**
+   * Get SACCOs under a specific umbrella body (for KBA_admin)
+   */
+  getSaccosByParent: async (parentId: string): Promise<Organization[]> => {
+    const response = await apiClient.get<{ data: Organization[] }>(
+      `${API_ENDPOINTS.ORGANIZATIONS}/${parentId}/children`
+    );
+    // Filter to only include active SACCOs
+    return response.data.data.filter(org => org.status === 'ACTIVE');
+  },
+
+  /**
    * Get organization children
    */
   getChildren: async (id: string): Promise<Organization[]> => {
@@ -165,7 +208,24 @@ export const organizationsApi = {
     const page = params.page ?? PAGINATION.DEFAULT_PAGE;
     const limit = params.limit ?? PAGINATION.DEFAULT_LIMIT;
 
-    const response = await apiClient.get<{ data: { members: Array<User & { membership: Membership }>; total: number } }>(
+    // API returns: { id, userId, role, status, memberNumber, joinedAt, user: { id, phone, fullName, kycStatus } }
+    // Frontend expects: { id, phone, fullName, membership: { id, memberNumber, status, role, joinedAt } }
+    interface ApiMemberResponse {
+      id: string;
+      userId: string;
+      role: string;
+      status: string;
+      memberNumber: string | null;
+      joinedAt: string | null;
+      user: {
+        id: string;
+        phone: string;
+        fullName: string | null;
+        kycStatus: string;
+      };
+    }
+
+    const response = await apiClient.get<{ data: { members: ApiMemberResponse[]; total: number } }>(
       `${API_ENDPOINTS.ORGANIZATIONS}/${params.organizationId}/members`,
       {
         params: {
@@ -177,7 +237,32 @@ export const organizationsApi = {
       }
     );
 
-    const { members, total } = response.data.data;
+    const { members: rawMembers, total } = response.data.data;
+
+    // Transform API response to frontend expected format
+    const members = rawMembers.map((m) => {
+      // Split fullName into firstName and lastName
+      const nameParts = (m.user.fullName || '').split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      return {
+        id: m.user.id,
+        phone: m.user.phone,
+        fullName: m.user.fullName,
+        firstName,
+        lastName,
+        kycStatus: m.user.kycStatus,
+        membership: {
+          id: m.id,
+          memberNumber: m.memberNumber,
+          status: m.status,
+          role: m.role,
+          joinedAt: m.joinedAt,
+        },
+      } as User & { membership: Membership };
+    });
+
     return {
       data: members,
       meta: {

@@ -13,7 +13,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../identity/guards/jwt-auth.guard.js';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../../identity/decorators/current-user.decorator.js';
 import { NotificationService } from '../services/notification.service.js';
 import { UpdatePreferencesDto } from '../dto/update-preferences.dto.js';

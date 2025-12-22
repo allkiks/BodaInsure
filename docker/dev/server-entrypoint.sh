@@ -5,7 +5,7 @@ echo "========================================="
 echo "BodaInsure Server Starting..."
 echo "========================================="
 
-echo "[1/4] Waiting for PostgreSQL to be ready..."
+echo "[1/5] Waiting for PostgreSQL to be ready..."
 MAX_RETRIES=30
 RETRY_COUNT=0
 
@@ -22,7 +22,7 @@ fi
 
 echo "  PostgreSQL is ready!"
 
-echo "[2/4] Waiting for Redis to be ready..."
+echo "[2/5] Waiting for Redis to be ready..."
 RETRY_COUNT=0
 
 until nc -z "${REDIS_HOST:-redis}" "${REDIS_PORT:-6379}" > /dev/null 2>&1 || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
@@ -38,13 +38,23 @@ fi
 
 echo "  Redis is ready!"
 
-echo "[3/4] Running database migrations..."
+echo "[3/5] Running database migrations..."
+echo "----------------------------------------"
 npm run migration:run 2>&1 || {
   echo "  Note: Migration completed (may have had no pending migrations)"
 }
+echo "----------------------------------------"
 echo "  Migrations complete!"
 
-echo "[4/4] Starting application..."
+echo "[4/5] Running database seeding..."
+echo "----------------------------------------"
+npm run seed 2>&1 || {
+  echo "  Warning: Seeding completed with warnings (data may already exist)"
+}
+echo "----------------------------------------"
+echo "  Seeding complete!"
+
+echo "[5/5] Starting application..."
 echo "========================================="
 echo "Server is starting on port ${PORT:-3000}"
 echo "========================================="

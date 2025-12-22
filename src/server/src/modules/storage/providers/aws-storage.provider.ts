@@ -41,6 +41,7 @@ export class AwsStorageProvider implements IStorageProvider {
   readonly providerType = StorageProviderType.AWS;
 
   private readonly client: S3Client;
+  private readonly publicClient: S3Client; // Separate client for presigned URLs with public endpoint
   private readonly bucketNames: Record<StorageBucket, string>;
 
   constructor(private readonly configService: ConfigService) {
@@ -48,6 +49,7 @@ export class AwsStorageProvider implements IStorageProvider {
     const accessKeyId = this.configService.get<string>('app.storage.aws.accessKeyId');
     const secretAccessKey = this.configService.get<string>('app.storage.aws.secretAccessKey');
     const endpoint = this.configService.get<string>('app.storage.aws.endpoint');
+    const publicEndpoint = this.configService.get<string>('app.storage.aws.publicEndpoint');
     const forcePathStyle = this.configService.get<boolean>('app.storage.aws.forcePathStyle', false);
 
     const clientConfig: ConstructorParameters<typeof S3Client>[0] = {
@@ -68,6 +70,16 @@ export class AwsStorageProvider implements IStorageProvider {
     }
 
     this.client = new S3Client(clientConfig);
+
+    // Create a separate client for presigned URLs using the public endpoint
+    // This ensures the signature is computed with the correct host that browsers will use
+    if (publicEndpoint) {
+      const publicClientConfig = { ...clientConfig, endpoint: publicEndpoint };
+      this.publicClient = new S3Client(publicClientConfig);
+      this.logger.log(`Presigned URLs will use public endpoint: ${publicEndpoint}`);
+    } else {
+      this.publicClient = this.client;
+    }
 
     this.bucketNames = {
       [StorageBucket.KYC]: this.configService.get<string>(
@@ -351,6 +363,7 @@ export class AwsStorageProvider implements IStorageProvider {
 
   /**
    * Generate a signed URL for upload
+   * Uses publicClient for browser-accessible URLs
    */
   async getSignedUploadUrl(
     bucket: StorageBucket,
@@ -369,7 +382,8 @@ export class AwsStorageProvider implements IStorageProvider {
         ContentType: options?.contentType,
       });
 
-      const url = await getSignedUrl(this.client, command, { expiresIn });
+      // Use publicClient for presigned URLs - browser accessible
+      const url = await getSignedUrl(this.publicClient, command, { expiresIn });
 
       return {
         success: true,
@@ -387,6 +401,7 @@ export class AwsStorageProvider implements IStorageProvider {
 
   /**
    * Generate a signed URL for download
+   * Uses publicClient which is configured with the public endpoint for browser access
    */
   async getSignedDownloadUrl(
     bucket: StorageBucket,
@@ -404,7 +419,9 @@ export class AwsStorageProvider implements IStorageProvider {
         Key: key,
       });
 
-      const url = await getSignedUrl(this.client, command, { expiresIn });
+      // Use publicClient for presigned URLs - this client is configured with the public endpoint
+      // so the signature is computed with the correct host that browsers will use
+      const url = await getSignedUrl(this.publicClient, command, { expiresIn });
 
       return {
         success: true,

@@ -244,9 +244,10 @@ export default function ProfilePage() {
           <CardTitle>Account Information</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* GAP-015: Use UPPERCASE status constants */}
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Account Status</span>
-            <Badge variant={user.status === 'active' ? 'default' : 'secondary'}>
+            <Badge variant={user.status === 'ACTIVE' ? 'default' : 'secondary'}>
               {user.status}
             </Badge>
           </div>
@@ -254,9 +255,9 @@ export default function ProfilePage() {
             <span className="text-muted-foreground">KYC Status</span>
             <Badge
               variant={
-                user.kycStatus === 'approved'
+                user.kycStatus === 'APPROVED'
                   ? 'default'
-                  : user.kycStatus === 'rejected'
+                  : user.kycStatus === 'REJECTED'
                   ? 'destructive'
                   : 'secondary'
               }
