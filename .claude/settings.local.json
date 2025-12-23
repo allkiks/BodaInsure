@@ -58,7 +58,9 @@
       "Bash(powershell -Command:*)",
       "Bash(make dev-docker:*)",
       "Bash(docker logout:*)",
-      "Bash(docker pull:*)"
+      "Bash(docker pull:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker start:*)"
     ]
   }
 }
