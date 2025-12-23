@@ -1,13 +1,141 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 /**
- * Migration to fix session and job table schemas
+ * Migration to fix session, job, and membership table schemas
  * These tables have drifted from their entity definitions
  */
 export class FixSessionAndJobSchema1734700000000 implements MigrationInterface {
   name = 'FixSessionAndJobSchema1734700000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // =============================================
+    // Fix MEMBERSHIPS table first
+    // =============================================
+
+    // Rename membership_number to member_number if it exists
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'memberships' AND column_name = 'membership_number') THEN
+          ALTER TABLE "memberships" RENAME COLUMN "membership_number" TO "member_number";
+        END IF;
+      END $$;
+    `);
+
+    // Add missing columns to memberships
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'member_number') THEN
+          ALTER TABLE "memberships" ADD COLUMN "member_number" varchar(50);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'expires_at') THEN
+          ALTER TABLE "memberships" ADD COLUMN "expires_at" TIMESTAMP WITH TIME ZONE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'approved_by') THEN
+          ALTER TABLE "memberships" ADD COLUMN "approved_by" uuid;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'approved_at') THEN
+          ALTER TABLE "memberships" ADD COLUMN "approved_at" TIMESTAMP WITH TIME ZONE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'suspension_reason') THEN
+          ALTER TABLE "memberships" ADD COLUMN "suspension_reason" text;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'suspended_by') THEN
+          ALTER TABLE "memberships" ADD COLUMN "suspended_by" uuid;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'suspended_at') THEN
+          ALTER TABLE "memberships" ADD COLUMN "suspended_at" TIMESTAMP WITH TIME ZONE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'is_primary') THEN
+          ALTER TABLE "memberships" ADD COLUMN "is_primary" boolean NOT NULL DEFAULT false;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'fee_paid') THEN
+          ALTER TABLE "memberships" ADD COLUMN "fee_paid" integer NOT NULL DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'memberships' AND column_name = 'fee_reference') THEN
+          ALTER TABLE "memberships" ADD COLUMN "fee_reference" varchar(100);
+        END IF;
+      END $$;
+    `);
+
+    // Create membership enums if they don't exist
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'memberships_status_enum') THEN
+          CREATE TYPE "public"."memberships_status_enum" AS ENUM('PENDING', 'ACTIVE', 'SUSPENDED', 'EXPIRED', 'REVOKED');
+        END IF;
+      END $$;
+    `);
+
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'memberships_role_enum') THEN
+          CREATE TYPE "public"."memberships_role_enum" AS ENUM('MEMBER', 'OFFICIAL', 'ADMIN', 'CHAIRPERSON', 'SECRETARY', 'TREASURER');
+        END IF;
+      END $$;
+    `);
+
+    // Update status column to use enum (if it's varchar)
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'memberships' AND column_name = 'status' AND data_type = 'character varying') THEN
+          UPDATE "memberships" SET "status" = 'ACTIVE' WHERE "status" = 'active';
+          UPDATE "memberships" SET "status" = 'PENDING' WHERE "status" = 'pending';
+          ALTER TABLE "memberships" ALTER COLUMN "status" TYPE "public"."memberships_status_enum" USING "status"::"public"."memberships_status_enum";
+          ALTER TABLE "memberships" ALTER COLUMN "status" SET DEFAULT 'PENDING';
+        END IF;
+      END $$;
+    `);
+
+    // Update role column to use enum (if it's varchar)
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'memberships' AND column_name = 'role' AND data_type = 'character varying') THEN
+          UPDATE "memberships" SET "role" = 'MEMBER' WHERE "role" = 'member';
+          UPDATE "memberships" SET "role" = 'ADMIN' WHERE "role" = 'admin';
+          ALTER TABLE "memberships" ALTER COLUMN "role" TYPE "public"."memberships_role_enum" USING "role"::"public"."memberships_role_enum";
+          ALTER TABLE "memberships" ALTER COLUMN "role" SET DEFAULT 'MEMBER';
+        END IF;
+      END $$;
+    `);
+
+    // Fix timestamp columns to use timezone
+    await queryRunner.query(`
+      ALTER TABLE "memberships"
+        ALTER COLUMN "joined_at" TYPE TIMESTAMP WITH TIME ZONE,
+        ALTER COLUMN "created_at" TYPE TIMESTAMP WITH TIME ZONE,
+        ALTER COLUMN "updated_at" TYPE TIMESTAMP WITH TIME ZONE;
+    `);
+
+    // Fix left_at if it exists
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'memberships' AND column_name = 'left_at') THEN
+          ALTER TABLE "memberships" ALTER COLUMN "left_at" TYPE TIMESTAMP WITH TIME ZONE;
+        END IF;
+      END $$;
+    `);
+
     // =============================================
     // Fix SESSIONS table
     // =============================================
@@ -168,7 +296,6 @@ export class FixSessionAndJobSchema1734700000000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // This is a destructive migration - down is not fully reversible
-    // Just drop the new tables if needed
     await queryRunner.query(`DROP TABLE IF EXISTS "job_history" CASCADE`);
     await queryRunner.query(`DROP TABLE IF EXISTS "jobs" CASCADE`);
     await queryRunner.query(`DROP TABLE IF EXISTS "sessions" CASCADE`);
@@ -179,5 +306,7 @@ export class FixSessionAndJobSchema1734700000000 implements MigrationInterface {
     await queryRunner.query(`DROP TYPE IF EXISTS "public"."jobs_type_enum"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "public"."jobs_status_enum"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "public"."job_history_status_enum"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "public"."memberships_status_enum"`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "public"."memberships_role_enum"`);
   }
 }

@@ -236,8 +236,8 @@ export class DashboardService {
       SELECT
         COUNT(*) as total_policies,
         COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_policies,
-        COUNT(*) FILTER (WHERE status = 'ACTIVE' AND expires_at BETWEEN $1 AND $2) as expiring_this_week,
-        COUNT(*) FILTER (WHERE status = 'ACTIVE' AND expires_at BETWEEN $1 AND $3) as expiring_this_month,
+        COUNT(*) FILTER (WHERE status = 'ACTIVE' AND end_date BETWEEN $1 AND $2) as expiring_this_week,
+        COUNT(*) FILTER (WHERE status = 'ACTIVE' AND end_date BETWEEN $1 AND $3) as expiring_this_month,
         COUNT(*) FILTER (WHERE created_at >= $1) as issued_today,
         COUNT(*) FILTER (WHERE created_at >= $4) as issued_this_week,
         COUNT(*) FILTER (WHERE created_at >= $5) as issued_this_month,
