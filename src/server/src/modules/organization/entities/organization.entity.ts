@@ -47,7 +47,7 @@ export class Organization {
   id!: string;
 
   /** Organization name */
-  @Column({ type: 'varchar', length: 200 })
+  @Column({ type: 'varchar', length: 255 })
   name!: string;
 
   /** Short code/identifier */

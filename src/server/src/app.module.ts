@@ -50,7 +50,9 @@ import redisConfig from './config/redis.config.js';
         password: configService.get<string>('database.password'),
         database: configService.get<string>('database.database'),
         autoLoadEntities: true,
-        synchronize: configService.get<string>('app.nodeEnv') !== 'production',
+        // IMPORTANT: Disable synchronize - we use migrations for schema management
+        // synchronize: true causes conflicts when entity definitions differ from migrations
+        synchronize: false,
         logging: configService.get<boolean>('database.logging'),
         ssl: configService.get('database.ssl'),
         extra: configService.get('database.extra'),

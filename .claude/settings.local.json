@@ -55,7 +55,8 @@
       "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\server\\\\.env.example\")",
       "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\client\\\\.env.example\")",
       "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\mobile\\\\.env.example\")",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(make dev-docker:*)"
     ]
   }
 }

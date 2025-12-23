@@ -7,7 +7,8 @@ export default registerAs('database', () => ({
   username: process.env['DB_USERNAME'] ?? 'bodainsure',
   password: process.env['DB_PASSWORD'] ?? 'bodainsure',
   database: process.env['DB_NAME'] ?? 'bodainsure',
-  synchronize: process.env['NODE_ENV'] !== 'production',
+  // IMPORTANT: Disable synchronize - we use migrations for schema management
+  synchronize: false,
   logging: process.env['DB_LOGGING'] === 'true',
   ssl:
     process.env['DB_SSL'] === 'true'
