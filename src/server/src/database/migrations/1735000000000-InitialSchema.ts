@@ -510,22 +510,57 @@ export class InitialSchema1735000000000 implements MigrationInterface {
       )
     `);
 
+    // Policy Terms Type enum
+    await queryRunner.query(`
+      DO $$ BEGIN
+        CREATE TYPE "policy_terms_type_enum" AS ENUM ('TPO', 'COMPREHENSIVE');
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    `);
+
     // Policy Terms table
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "policy_terms" (
         "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-        "version" varchar(20) NOT NULL UNIQUE,
-        "title" varchar(255) NOT NULL,
+        "version" varchar(20) NOT NULL,
+        "type" "policy_terms_type_enum" NOT NULL DEFAULT 'TPO',
+        "title" varchar(200) NOT NULL,
         "content" text NOT NULL,
         "summary" text,
+        "content_sw" text,
+        "summary_sw" text,
+        "key_terms" text,
+        "key_terms_sw" text,
+        "inclusions" text,
+        "exclusions" text,
         "effective_from" timestamptz NOT NULL,
-        "effective_until" timestamptz,
+        "effective_to" timestamptz,
         "is_active" boolean NOT NULL DEFAULT true,
-        "policy_type" "policy_type_enum",
-        "metadata" jsonb,
+        "underwriter_name" varchar(200) NOT NULL,
+        "ira_approval_ref" varchar(100),
+        "free_look_days" int NOT NULL DEFAULT 30,
+        "cancellation_policy" text,
+        "claims_process" text,
+        "pdf_url" varchar(500),
         "created_by" uuid,
         "created_at" timestamptz NOT NULL DEFAULT NOW(),
         "updated_at" timestamptz NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    // Policy Terms Acknowledgments table
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "policy_terms_acknowledgments" (
+        "id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "terms_id" uuid NOT NULL REFERENCES "policy_terms"("id") ON DELETE CASCADE,
+        "acknowledged_at" timestamptz NOT NULL,
+        "ip_address" varchar(45),
+        "user_agent" text,
+        "channel" varchar(20) NOT NULL DEFAULT 'app',
+        "policy_id" uuid,
+        "consent_text" text,
+        "terms_checksum" varchar(64),
+        "created_at" timestamptz NOT NULL DEFAULT NOW()
       )
     `);
 
@@ -852,6 +887,7 @@ export class InitialSchema1735000000000 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS "geography" CASCADE`);
     await queryRunner.query(`DROP TABLE IF EXISTS "kyc_validations" CASCADE`);
     await queryRunner.query(`DROP TABLE IF EXISTS "documents" CASCADE`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "policy_terms_acknowledgments" CASCADE`);
     await queryRunner.query(`DROP TABLE IF EXISTS "policy_terms" CASCADE`);
     await queryRunner.query(`DROP TABLE IF EXISTS "policy_documents" CASCADE`);
     await queryRunner.query(`DROP TABLE IF EXISTS "policies" CASCADE`);
@@ -898,5 +934,6 @@ export class InitialSchema1735000000000 implements MigrationInterface {
     await queryRunner.query(`DROP TYPE IF EXISTS "kyc_status_enum" CASCADE`);
     await queryRunner.query(`DROP TYPE IF EXISTS "user_role_enum" CASCADE`);
     await queryRunner.query(`DROP TYPE IF EXISTS "user_status_enum" CASCADE`);
+    await queryRunner.query(`DROP TYPE IF EXISTS "policy_terms_type_enum" CASCADE`);
   }
 }
