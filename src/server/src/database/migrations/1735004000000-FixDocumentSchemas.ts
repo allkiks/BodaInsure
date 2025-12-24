@@ -73,9 +73,24 @@ export class FixDocumentSchemas1735004000000 implements MigrationInterface {
       UPDATE "documents" SET "storage_key" = "file_path" WHERE "storage_key" IS NULL
     `);
 
+    // Make file_path nullable (entity now uses storage_key)
+    await queryRunner.query(`
+      ALTER TABLE "documents" ALTER COLUMN "file_path" DROP NOT NULL
+    `);
+
     // Add original_filename column (alias for file_name)
     await queryRunner.query(`
       ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "original_filename" varchar(255)
+    `);
+
+    // Copy file_name to original_filename for existing records
+    await queryRunner.query(`
+      UPDATE "documents" SET "original_filename" = "file_name" WHERE "original_filename" IS NULL
+    `);
+
+    // Make file_name nullable (entity now uses original_filename)
+    await queryRunner.query(`
+      ALTER TABLE "documents" ALTER COLUMN "file_name" DROP NOT NULL
     `);
 
     // Copy file_name to original_filename for existing records
