@@ -281,6 +281,21 @@ export class FixDocumentSchemas1735004000000 implements MigrationInterface {
     await queryRunner.query(`
       ALTER TABLE "kyc_validations" ADD COLUMN IF NOT EXISTS "validated_by" uuid
     `);
+
+    // Create validation_result enum type
+    await queryRunner.query(`
+      DO $$ BEGIN
+        CREATE TYPE "validation_result_enum" AS ENUM ('PASS', 'FAIL', 'WARNING', 'PENDING');
+      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    `);
+
+    // Fix result column type (was jsonb, should be enum)
+    await queryRunner.query(`
+      ALTER TABLE "kyc_validations" DROP COLUMN IF EXISTS "result"
+    `);
+    await queryRunner.query(`
+      ALTER TABLE "kyc_validations" ADD COLUMN "result" "validation_result_enum" DEFAULT 'PENDING'
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
