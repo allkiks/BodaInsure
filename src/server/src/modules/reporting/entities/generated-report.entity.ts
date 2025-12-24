@@ -7,7 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { ReportDefinition, ReportFormat } from './report-definition.entity.js';
+import { ReportDefinition, ReportFormat, ReportType } from './report-definition.entity.js';
 
 /**
  * Report status
@@ -43,6 +43,13 @@ export class GeneratedReport {
   /** Report name (snapshot from definition) */
   @Column({ type: 'varchar', length: 100 })
   name!: string;
+
+  /** Report type (snapshot from definition) */
+  @Column({
+    type: 'enum',
+    enum: ReportType,
+  })
+  type!: ReportType;
 
   /** Report format */
   @Column({

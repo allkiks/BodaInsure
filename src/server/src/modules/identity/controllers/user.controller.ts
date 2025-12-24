@@ -39,6 +39,21 @@ export class UserController {
   ) {}
 
   /**
+   * Split fullName into firstName and lastName
+   */
+  private splitFullName(fullName?: string): { firstName?: string; lastName?: string } {
+    if (!fullName) return {};
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) {
+      return { firstName: parts[0] };
+    }
+    return {
+      firstName: parts[0],
+      lastName: parts.slice(1).join(' '),
+    };
+  }
+
+  /**
    * Get current user profile
    */
   @Get('me')
@@ -60,10 +75,14 @@ export class UserController {
       throw new Error('User not found');
     }
 
+    const { firstName, lastName } = this.splitFullName(fullUser.fullName);
+
     return {
       id: fullUser.id,
       phone: fullUser.phone,
       fullName: fullUser.fullName,
+      firstName,
+      lastName,
       email: fullUser.email,
       status: fullUser.status,
       role: fullUser.role,
@@ -92,15 +111,25 @@ export class UserController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateProfileDto,
   ): Promise<UserProfileResponseDto> {
+    // Combine firstName + lastName into fullName if provided separately
+    let fullName = dto.fullName;
+    if (!fullName && (dto.firstName || dto.lastName)) {
+      fullName = [dto.firstName, dto.lastName].filter(Boolean).join(' ');
+    }
+
     const updatedUser = await this.userService.updateProfile(user.userId, {
-      fullName: dto.fullName,
+      fullName,
       email: dto.email,
     });
+
+    const { firstName: derivedFirstName, lastName: derivedLastName } = this.splitFullName(updatedUser.fullName);
 
     return {
       id: updatedUser.id,
       phone: updatedUser.phone,
       fullName: updatedUser.fullName,
+      firstName: derivedFirstName,
+      lastName: derivedLastName,
       email: updatedUser.email,
       status: updatedUser.status,
       role: updatedUser.role,

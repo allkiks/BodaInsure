@@ -15,6 +15,24 @@ export class UpdateProfileDto {
   fullName?: string;
 
   @ApiPropertyOptional({
+    description: 'First name',
+    example: 'John',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  firstName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Last name',
+    example: 'Kamau',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  lastName?: string;
+
+  @ApiPropertyOptional({
     description: 'Email address',
     example: 'john.kamau@example.com',
   })
@@ -67,6 +85,18 @@ export class UserProfileResponseDto {
     example: 'John Kamau',
   })
   fullName?: string;
+
+  @ApiPropertyOptional({
+    description: 'First name (derived from full name)',
+    example: 'John',
+  })
+  firstName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Last name (derived from full name)',
+    example: 'Kamau',
+  })
+  lastName?: string;
 
   @ApiPropertyOptional({
     description: 'Email address',

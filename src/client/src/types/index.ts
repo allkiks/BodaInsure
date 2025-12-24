@@ -371,10 +371,17 @@ export interface ReportDefinition {
   name: string;
   description: string;
   type: ReportType;
-  columns: ReportColumn[];
+  defaultFormat: ReportFormat;
+  availableFormats: ReportFormat[];
+  frequency: ReportFrequency;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export type ReportType = 'enrollment' | 'payment' | 'policy' | 'kyc';
+export type ReportType = 'ENROLLMENT' | 'PAYMENT' | 'POLICY' | 'ORGANIZATION' | 'FINANCIAL' | 'CUSTOM';
+export type ReportFormat = 'JSON' | 'CSV' | 'EXCEL' | 'PDF';
+export type ReportFrequency = 'MANUAL' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY';
 
 export interface ReportColumn {
   key: string;
@@ -385,11 +392,13 @@ export interface ReportColumn {
 export interface GeneratedReport {
   id: string;
   definitionId: string;
-  status: 'pending' | 'completed' | 'failed';
+  name: string;
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
   startDate: string;
   endDate: string;
-  format: 'csv' | 'xlsx';
-  downloadUrl?: string;
+  format: ReportFormat;
+  fileUrl?: string;
+  recordCount?: number;
   createdAt: string;
 }
 

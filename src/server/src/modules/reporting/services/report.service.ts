@@ -12,6 +12,7 @@ import {
   GeneratedReport,
   ReportStatus,
 } from '../entities/generated-report.entity.js';
+import { EncryptionService } from '../../../common/services/encryption.service.js';
 
 /**
  * Create report definition request
@@ -64,6 +65,7 @@ export class ReportService {
     @InjectRepository(GeneratedReport)
     private readonly reportRepository: Repository<GeneratedReport>,
     private readonly dataSource: DataSource,
+    private readonly encryptionService: EncryptionService,
   ) {}
 
   /**
@@ -177,6 +179,7 @@ export class ReportService {
     const report = this.reportRepository.create({
       reportDefinitionId: definition.id,
       name: definition.name,
+      type: definition.type,
       format,
       status: ReportStatus.PENDING,
       parameters: request.parameters,
@@ -256,6 +259,16 @@ export class ReportService {
         return this.generateOrganizationReport(report);
       case ReportType.FINANCIAL:
         return this.generateFinancialReport(report);
+      case ReportType.CUSTOM:
+        // Handle custom reports based on the report name
+        if (definition.name.toLowerCase().includes('financial')) {
+          return this.generateFinancialReport(report);
+        }
+        if (definition.name.toLowerCase().includes('kyc')) {
+          return this.generateKycReport(report);
+        }
+        // Default custom report - generic query based
+        return this.generateGenericReport(report, definition);
       default:
         throw new BadRequestException(`Unsupported report type: ${definition.type}`);
     }
@@ -288,7 +301,8 @@ export class ReportService {
     }
 
     if (report.endDate) {
-      query += ` AND u.created_at <= $${paramIndex++}`;
+      // Use < next day to include all records from the end date
+      query += ` AND u.created_at < ($${paramIndex++}::date + interval '1 day')`;
       params.push(report.endDate);
     }
 
@@ -315,14 +329,18 @@ export class ReportService {
     let query = `
       SELECT
         t.id,
-        t.user_id as "userId",
+        COALESCE(u.phone, '') as "payerPhone",
+        u.full_name as "payerNameEncrypted",
+        COALESCE(o.name, '') as "organizationName",
         t.type,
-        t.amount,
+        TO_CHAR(t.amount / 100.0, 'FM999999990.00') as "amount",
         t.status,
-        t.mpesa_receipt as "mpesaReceipt",
-        t.created_at as "createdAt",
-        t.completed_at as "completedAt"
+        COALESCE(t.mpesa_receipt_number, '') as "mpesaReceipt",
+        COALESCE(TO_CHAR(t.completed_at, 'YYYY-MM-DD HH24:MI:SS'), '') as "paymentDate"
       FROM transactions t
+      LEFT JOIN users u ON t.user_id = u.id
+      LEFT JOIN memberships m ON u.id = m.user_id AND m.is_primary = true
+      LEFT JOIN organizations o ON m.organization_id = o.id
       WHERE 1=1
     `;
 
@@ -335,7 +353,8 @@ export class ReportService {
     }
 
     if (report.endDate) {
-      query += ` AND t.created_at <= $${paramIndex++}`;
+      // Use < next day to include all records from the end date
+      query += ` AND t.created_at < ($${paramIndex++}::date + interval '1 day')`;
       params.push(report.endDate);
     }
 
@@ -346,14 +365,30 @@ export class ReportService {
 
     query += ' ORDER BY t.created_at DESC';
 
-    const rows = await this.dataSource.query(query, params);
+    const rawRows = await this.dataSource.query(query, params);
+
+    // Decrypt payer names and transform rows
+    const rows = rawRows.map((row: Record<string, unknown>) => {
+      const decryptedName = this.encryptionService.decrypt(row.payerNameEncrypted as string) || '';
+      return {
+        id: row.id,
+        payerPhone: row.payerPhone,
+        payerName: decryptedName,
+        organizationName: row.organizationName,
+        type: row.type,
+        amount: row.amount,
+        status: row.status,
+        mpesaReceipt: row.mpesaReceipt,
+        paymentDate: row.paymentDate,
+      };
+    });
 
     return {
-      columns: ['id', 'userId', 'type', 'amount', 'status', 'mpesaReceipt', 'createdAt', 'completedAt'],
+      columns: ['id', 'payerPhone', 'payerName', 'organizationName', 'type', 'amount', 'status', 'mpesaReceipt', 'paymentDate'],
       rows,
       totalCount: rows.length,
       metadata: {
-        totalAmount: rows.reduce((sum: number, r: { amount: number }) => sum + (r.amount || 0), 0),
+        totalAmount: rows.reduce((sum: number, r: { amount: string }) => sum + parseFloat(r.amount || '0'), 0).toFixed(2),
       },
     };
   }
@@ -386,7 +421,8 @@ export class ReportService {
     }
 
     if (report.endDate) {
-      query += ` AND p.created_at <= $${paramIndex++}`;
+      // Use < next day to include all records from the end date
+      query += ` AND p.created_at < ($${paramIndex++}::date + interval '1 day')`;
       params.push(report.endDate);
     }
 
@@ -433,7 +469,8 @@ export class ReportService {
     }
 
     if (report.endDate) {
-      query += ` AND o.created_at <= $${paramIndex++}`;
+      // Use < next day to include all records from the end date
+      query += ` AND o.created_at < ($${paramIndex++}::date + interval '1 day')`;
       params.push(report.endDate);
     }
 
@@ -461,9 +498,9 @@ export class ReportService {
       SELECT
         DATE(t.created_at) as date,
         COUNT(*) as "transactionCount",
-        SUM(t.amount) as "totalAmount",
-        SUM(t.amount) FILTER (WHERE t.type = 'DEPOSIT') as "depositAmount",
-        SUM(t.amount) FILTER (WHERE t.type = 'DAILY_PAYMENT') as "dailyPaymentAmount",
+        ROUND(SUM(t.amount) / 100.0, 2) as "totalAmount",
+        ROUND(SUM(t.amount) FILTER (WHERE t.type = 'DEPOSIT') / 100.0, 2) as "depositAmount",
+        ROUND(SUM(t.amount) FILTER (WHERE t.type = 'DAILY_PAYMENT') / 100.0, 2) as "dailyPaymentAmount",
         COUNT(*) FILTER (WHERE t.status = 'COMPLETED') as "completedCount",
         COUNT(*) FILTER (WHERE t.status = 'FAILED') as "failedCount"
       FROM transactions t
@@ -479,7 +516,8 @@ export class ReportService {
     }
 
     if (report.endDate) {
-      query += ` AND t.created_at <= $${paramIndex++}`;
+      // Use < next day to include all records from the end date
+      query += ` AND t.created_at < ($${paramIndex++}::date + interval '1 day')`;
       params.push(report.endDate);
     }
 
@@ -500,6 +538,87 @@ export class ReportService {
         grandTotal: rows.reduce((sum: number, r: { totalAmount: string }) => sum + parseFloat(r.totalAmount || '0'), 0),
       },
     };
+  }
+
+  /**
+   * Generate KYC report
+   */
+  private async generateKycReport(report: GeneratedReport): Promise<ReportData> {
+    let query = `
+      SELECT
+        d.id,
+        d.user_id as "userId",
+        d.document_type as "documentType",
+        d.status,
+        d.file_name as "fileName",
+        d.created_at as "createdAt",
+        d.verified_at as "verifiedAt"
+      FROM documents d
+      WHERE 1=1
+    `;
+
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (report.startDate) {
+      query += ` AND d.created_at >= $${paramIndex++}`;
+      params.push(report.startDate);
+    }
+
+    if (report.endDate) {
+      // Use < next day to include all records from the end date
+      query += ` AND d.created_at < ($${paramIndex++}::date + interval '1 day')`;
+      params.push(report.endDate);
+    }
+
+    if (report.organizationId) {
+      query += ` AND d.user_id IN (SELECT user_id FROM memberships WHERE organization_id = $${paramIndex++})`;
+      params.push(report.organizationId);
+    }
+
+    query += ' ORDER BY d.created_at DESC';
+
+    const rows = await this.dataSource.query(query, params);
+
+    return {
+      columns: ['id', 'userId', 'documentType', 'status', 'fileName', 'createdAt', 'verifiedAt'],
+      rows,
+      totalCount: rows.length,
+    };
+  }
+
+  /**
+   * Generate generic report from definition query
+   */
+  private async generateGenericReport(
+    _report: GeneratedReport,
+    definition: ReportDefinition,
+  ): Promise<ReportData> {
+    // Use the query from the definition config if available
+    const query = definition.config?.query;
+    if (!query) {
+      return {
+        columns: [],
+        rows: [],
+        totalCount: 0,
+        metadata: { message: 'No query defined for this report' },
+      };
+    }
+
+    // Execute the query (with basic date filtering if possible)
+    try {
+      const rows = await this.dataSource.query(query);
+      const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+      return {
+        columns,
+        rows,
+        totalCount: rows.length,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to execute generic report query: ${error}`);
+      throw new BadRequestException('Failed to execute report query');
+    }
   }
 
   /**

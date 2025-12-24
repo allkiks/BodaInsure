@@ -1,12 +1,12 @@
 import { apiClient } from './client';
 import { API_ENDPOINTS } from '@/config/constants';
-import type { ReportDefinition, GeneratedReport, PaginatedResponse } from '@/types';
+import type { ReportDefinition, GeneratedReport, PaginatedResponse, ReportFormat } from '@/types';
 
 interface GenerateReportParams {
   definitionId: string;
   startDate: string;
   endDate: string;
-  format: 'csv' | 'xlsx';
+  format: ReportFormat;
   filters?: Record<string, string>;
 }
 
@@ -25,9 +25,17 @@ export const reportsApi = {
    * Generate a new report
    */
   generateReport: async (params: GenerateReportParams): Promise<GeneratedReport> => {
+    // Transform to match server DTO expectations
+    const payload = {
+      reportDefinitionId: params.definitionId,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      format: params.format,
+      parameters: params.filters,
+    };
     const response = await apiClient.post<GeneratedReport>(
       API_ENDPOINTS.REPORT_GENERATE,
-      params
+      payload
     );
     return response.data;
   },
