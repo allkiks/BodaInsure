@@ -257,6 +257,30 @@ export class FixDocumentSchemas1735004000000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE INDEX IF NOT EXISTS "IDX_policy_documents_user" ON "policy_documents" ("user_id")
     `);
+
+    // ============================================
+    // ADD MISSING COLUMNS TO kyc_validations TABLE
+    // ============================================
+
+    // Add message column
+    await queryRunner.query(`
+      ALTER TABLE "kyc_validations" ADD COLUMN IF NOT EXISTS "message" text
+    `);
+
+    // Add details column
+    await queryRunner.query(`
+      ALTER TABLE "kyc_validations" ADD COLUMN IF NOT EXISTS "details" jsonb
+    `);
+
+    // Add is_automated column
+    await queryRunner.query(`
+      ALTER TABLE "kyc_validations" ADD COLUMN IF NOT EXISTS "is_automated" boolean NOT NULL DEFAULT true
+    `);
+
+    // Add validated_by column
+    await queryRunner.query(`
+      ALTER TABLE "kyc_validations" ADD COLUMN IF NOT EXISTS "validated_by" uuid
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
