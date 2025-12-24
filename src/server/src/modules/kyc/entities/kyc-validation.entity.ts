@@ -43,6 +43,9 @@ export class KycValidation {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  @Column({ name: 'user_id', type: 'uuid' })
+  userId!: string;
+
   @Column({ name: 'document_id', type: 'uuid' })
   documentId!: string;
 
@@ -56,6 +59,13 @@ export class KycValidation {
     enum: ValidationType,
   })
   validationType!: ValidationType;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    default: 'COMPLETED',
+  })
+  status!: string;
 
   @Column({
     type: 'enum',

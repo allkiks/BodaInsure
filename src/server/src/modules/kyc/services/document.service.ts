@@ -431,8 +431,10 @@ export class DocumentService {
 
     // Create manual validation record
     const validation = this.validationRepository.create({
+      userId: document.userId,
       documentId: document.id,
       validationType: ValidationType.MANUAL,
+      status: 'COMPLETED',
       result: status === DocumentStatus.APPROVED ? ValidationResult.PASS : ValidationResult.FAIL,
       message: rejectionReason,
       isAutomated: false,
@@ -464,7 +466,7 @@ export class DocumentService {
     const queryBuilder = this.documentRepository
       .createQueryBuilder('doc')
       .where('doc.status IN (:...statuses)', {
-        statuses: [DocumentStatus.PENDING, DocumentStatus.IN_REVIEW],
+        statuses: [DocumentStatus.PENDING, DocumentStatus.PROCESSING, DocumentStatus.IN_REVIEW],
       })
       .andWhere('doc.is_current = :isCurrent', { isCurrent: true });
 
@@ -515,8 +517,10 @@ export class DocumentService {
 
     // Quality check based on client-provided score
     const qualityValidation = this.validationRepository.create({
+      userId: document.userId,
       documentId: document.id,
       validationType: ValidationType.QUALITY,
+      status: 'COMPLETED',
       result:
         document.qualityScore && document.qualityScore >= 70
           ? ValidationResult.PASS
@@ -534,8 +538,10 @@ export class DocumentService {
 
     // Type match (placeholder - would use ML model)
     const typeMatchValidation = this.validationRepository.create({
+      userId: document.userId,
       documentId: document.id,
       validationType: ValidationType.TYPE_MATCH,
+      status: 'PENDING',
       result: ValidationResult.PENDING, // Would be determined by ML
       isAutomated: true,
     });
@@ -608,7 +614,7 @@ export class DocumentService {
     const pendingQuery = this.documentRepository
       .createQueryBuilder('doc')
       .where('doc.status IN (:...statuses)', {
-        statuses: [DocumentStatus.PENDING, DocumentStatus.IN_REVIEW],
+        statuses: [DocumentStatus.PENDING, DocumentStatus.PROCESSING, DocumentStatus.IN_REVIEW],
       })
       .andWhere('doc.is_current = :isCurrent', { isCurrent: true });
 

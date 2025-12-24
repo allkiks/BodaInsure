@@ -122,6 +122,7 @@ export class MpesaService {
   private readonly shortcode: string;
   private readonly passkey: string;
   private readonly callbackUrl: string;
+  private readonly useMock: boolean;
 
   private accessToken: string | null = null;
   private tokenExpiry: Date | null = null;
@@ -134,11 +135,17 @@ export class MpesaService {
     this.passkey = this.configService.get<string>('MPESA_PASSKEY', '');
     this.callbackUrl = this.configService.get<string>('MPESA_CALLBACK_URL', '');
 
+    // Enable mock mode via environment variable or if shortcode is not a valid number
+    const mockEnv = this.configService.get<string>('MPESA_USE_MOCK', 'false');
+    this.useMock = mockEnv === 'true' || !this.shortcode || this.shortcode === 'NA' || !/^\d+$/.test(this.shortcode);
+
     this.httpClient = axios.create({
       timeout: 30000, // 30 seconds timeout
     });
 
-    if (!this.consumerKey || !this.consumerSecret) {
+    if (this.useMock) {
+      this.logger.warn('M-Pesa running in MOCK mode. Payments will be simulated.');
+    } else if (!this.consumerKey || !this.consumerSecret) {
       this.logger.warn('M-Pesa credentials not configured. Payment features will be unavailable.');
     }
   }
@@ -223,8 +230,8 @@ export class MpesaService {
    * Initiate STK Push (Lipa Na M-Pesa Online)
    */
   async initiateSTKPush(request: StkPushRequest): Promise<StkPushResponse> {
-    if (!this.consumerKey || !this.consumerSecret) {
-      this.logger.warn('M-Pesa not configured - simulating STK Push');
+    if (this.useMock) {
+      this.logger.warn('M-Pesa in MOCK mode - simulating STK Push');
       return this.simulateStkPush(request);
     }
 
