@@ -195,14 +195,17 @@ export class DashboardService {
     const total = parseInt(stats?.total_transactions || '0', 10);
     const successRate = total > 0 ? (completed / total) * 100 : 0;
 
+    // Convert cents to KES (amounts are stored in cents in the database)
+    const centsToKes = (cents: string | number): number => parseFloat(String(cents || '0')) / 100;
+
     return {
       totalTransactions: total,
-      totalAmount: parseFloat(stats?.total_amount || '0'),
+      totalAmount: centsToKes(stats?.total_amount),
       depositsToday: parseInt(stats?.deposits_today || '0', 10),
-      depositAmountToday: parseFloat(stats?.deposit_amount_today || '0'),
+      depositAmountToday: centsToKes(stats?.deposit_amount_today),
       dailyPaymentsToday: parseInt(stats?.daily_payments_today || '0', 10),
-      dailyPaymentAmountToday: parseFloat(stats?.daily_amount_today || '0'),
-      averagePaymentAmount: parseFloat(stats?.avg_amount || '0'),
+      dailyPaymentAmountToday: centsToKes(stats?.daily_amount_today),
+      averagePaymentAmount: centsToKes(stats?.avg_amount),
       successRate: Math.round(successRate * 100) / 100,
       failedTransactions: parseInt(stats?.failed || '0', 10),
       pendingTransactions: parseInt(stats?.pending || '0', 10),
