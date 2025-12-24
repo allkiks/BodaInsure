@@ -10,7 +10,7 @@ import {
   Calendar,
   Filter,
 } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -27,17 +27,17 @@ import { adminApi } from '@/services/api/admin.api';
 import type { UserStatus, KycStatus, UserRole } from '@/types';
 
 const statusVariants: Record<UserStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  active: 'default',
-  inactive: 'secondary',
-  suspended: 'destructive',
-  pending: 'outline',
+  ACTIVE: 'default',
+  INACTIVE: 'secondary',
+  SUSPENDED: 'destructive',
+  PENDING: 'outline',
 };
 
 const kycVariants: Record<KycStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  approved: 'default',
-  pending: 'secondary',
-  rejected: 'destructive',
-  expired: 'outline',
+  APPROVED: 'default',
+  PENDING: 'secondary',
+  REJECTED: 'destructive',
+  EXPIRED: 'outline',
 };
 
 const roleLabels: Record<UserRole, string> = {
@@ -107,10 +107,10 @@ export default function UsersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                  <SelectItem value="suspended">Suspended</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  <SelectItem value="SUSPENDED">Suspended</SelectItem>
+                  <SelectItem value="PENDING">Pending</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={roleFilter} onValueChange={setRoleFilter}>

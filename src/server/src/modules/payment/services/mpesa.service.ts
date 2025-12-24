@@ -5,7 +5,14 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
+import { RedisService } from '../../../common/services/redis.service.js';
+import {
+  MpesaAuthException,
+  MpesaServiceUnavailableException,
+  MpesaTimeoutException,
+  formatMpesaLogError,
+} from '../errors/mpesa.errors.js';
 
 /**
  * M-Pesa Daraja API endpoints
@@ -107,10 +114,24 @@ export interface ParsedCallbackData {
 }
 
 /**
+ * Redis cache keys for M-Pesa token management
+ * Per P0-003 in mpesa_remediation.md
+ */
+const MPESA_TOKEN_CACHE_KEY = 'mpesa:oauth:access_token';
+const MPESA_TOKEN_LOCK_KEY = 'mpesa:oauth:refresh';
+const MPESA_TOKEN_CACHE_TTL_SECONDS = 55 * 60; // 55 minutes (token expires at 60)
+const MPESA_TOKEN_LOCK_TTL_SECONDS = 15; // 15 seconds max to fetch token
+
+/**
  * M-Pesa Daraja API Service
  * Handles all M-Pesa API interactions
  *
  * Per FEAT-PAY-001 and FEAT-PAY-002
+ *
+ * Token Caching (P0-003):
+ * Uses Redis for distributed token caching to prevent token invalidation
+ * in clustered deployments. Per Safaricom documentation, each new token
+ * request invalidates all previous tokens.
  */
 @Injectable()
 export class MpesaService {
@@ -124,10 +145,14 @@ export class MpesaService {
   private readonly callbackUrl: string;
   private readonly useMock: boolean;
 
+  // In-memory fallback for when Redis is unavailable
   private accessToken: string | null = null;
   private tokenExpiry: Date | null = null;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
+  ) {
     this.environment = this.configService.get<string>('MPESA_ENVIRONMENT', 'sandbox') as 'sandbox' | 'production';
     this.consumerKey = this.configService.get<string>('MPESA_CONSUMER_KEY', '');
     this.consumerSecret = this.configService.get<string>('MPESA_CONSUMER_SECRET', '');
@@ -143,22 +168,202 @@ export class MpesaService {
       timeout: 30000, // 30 seconds timeout
     });
 
+    // P1-003: Startup configuration validation
+    this.validateConfiguration();
+  }
+
+  /**
+   * Validate M-Pesa configuration on startup
+   *
+   * Per P1-003 in mpesa_remediation.md
+   *
+   * In production, missing required configuration will cause the application to fail fast
+   * with a clear error message rather than silently failing during payment operations.
+   */
+  private validateConfiguration(): void {
+    const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
+    const mpesaEnabled = this.configService.get<string>('MPESA_ENABLED', 'false') === 'true';
+
+    // In mock mode, skip validation
     if (this.useMock) {
       this.logger.warn('M-Pesa running in MOCK mode. Payments will be simulated.');
-    } else if (!this.consumerKey || !this.consumerSecret) {
-      this.logger.warn('M-Pesa credentials not configured. Payment features will be unavailable.');
+      return;
     }
+
+    // Check if M-Pesa is enabled
+    if (!mpesaEnabled) {
+      this.logger.warn('M-Pesa is disabled (MPESA_ENABLED=false). Payment features will be unavailable.');
+      return;
+    }
+
+    // Required configuration for production
+    const required: { key: string; value: string; sensitive?: boolean }[] = [
+      { key: 'MPESA_CONSUMER_KEY', value: this.consumerKey, sensitive: true },
+      { key: 'MPESA_CONSUMER_SECRET', value: this.consumerSecret, sensitive: true },
+      { key: 'MPESA_SHORTCODE', value: this.shortcode },
+      { key: 'MPESA_PASSKEY', value: this.passkey, sensitive: true },
+      { key: 'MPESA_CALLBACK_URL', value: this.callbackUrl },
+    ];
+
+    const missing = required.filter(({ value }) => !value);
+
+    if (missing.length > 0) {
+      const missingKeys = missing.map(({ key }) => key).join(', ');
+
+      if (nodeEnv === 'production') {
+        // In production, fail fast with clear error
+        throw new Error(
+          `Missing required M-Pesa configuration: ${missingKeys}. ` +
+          `Service cannot start in production without these values. ` +
+          `Either provide these values or set MPESA_ENABLED=false.`
+        );
+      } else {
+        // In development, warn but continue
+        this.logger.warn(
+          `M-Pesa credentials not fully configured (missing: ${missingKeys}). ` +
+          `Payment features will be unavailable.`
+        );
+        return;
+      }
+    }
+
+    // Validate environment matches expectation
+    if (nodeEnv === 'production' && this.environment !== 'production') {
+      this.logger.warn(
+        `WARNING: NODE_ENV is "production" but MPESA_ENVIRONMENT is "${this.environment}". ` +
+        `This means you are running in production mode against the M-Pesa sandbox. ` +
+        `Set MPESA_ENVIRONMENT=production for real payments.`
+      );
+    }
+
+    // Validate callback URL is HTTPS in production
+    if (nodeEnv === 'production' && this.callbackUrl && !this.callbackUrl.startsWith('https://')) {
+      throw new Error(
+        `MPESA_CALLBACK_URL must use HTTPS in production. ` +
+        `Current value: ${this.callbackUrl}`
+      );
+    }
+
+    // Validate callback URL doesn't contain discouraged keywords (per Safaricom docs)
+    if (this.callbackUrl) {
+      const discouragedKeywords = ['mpesa', 'safaricom', 'daraja'];
+      const lowerUrl = this.callbackUrl.toLowerCase();
+      const foundKeywords = discouragedKeywords.filter(kw => lowerUrl.includes(kw));
+
+      if (foundKeywords.length > 0 && nodeEnv === 'production') {
+        this.logger.warn(
+          `MPESA_CALLBACK_URL contains discouraged keywords: ${foundKeywords.join(', ')}. ` +
+          `Safaricom recommends avoiding these keywords in callback URLs.`
+        );
+      }
+    }
+
+    this.logger.log(
+      `M-Pesa configured: environment=${this.environment}, shortcode=${this.shortcode}, ` +
+      `callback=${this.callbackUrl.substring(0, 50)}...`
+    );
   }
 
   /**
    * Get OAuth access token from M-Pesa
+   *
+   * Implementation uses distributed locking per P0-003 in mpesa_remediation.md
+   * to prevent token invalidation in clustered deployments.
+   *
+   * Flow:
+   * 1. Check Redis cache for existing token
+   * 2. If not found, acquire distributed lock
+   * 3. Double-check cache after lock (another pod may have refreshed)
+   * 4. Fetch new token from Safaricom
+   * 5. Store in Redis cache for all pods
+   * 6. Release lock
+   *
+   * CRITICAL: Per Safaricom docs, each token request invalidates previous tokens.
+   * This means only ONE pod should ever fetch a token at a time.
    */
   async getAccessToken(): Promise<string> {
-    // Return cached token if still valid (with 5 minute buffer)
-    if (this.accessToken && this.tokenExpiry && new Date() < new Date(this.tokenExpiry.getTime() - 5 * 60 * 1000)) {
-      return this.accessToken;
+    // 1. Try Redis cache first (fast path - shared across all pods)
+    if (this.redisService.isAvailable()) {
+      const cachedToken = await this.redisService.get(MPESA_TOKEN_CACHE_KEY);
+      if (cachedToken) {
+        this.logger.debug('Using cached M-Pesa access token from Redis');
+        return cachedToken;
+      }
+    } else {
+      // Fallback to in-memory cache if Redis unavailable
+      if (this.accessToken && this.tokenExpiry && new Date() < new Date(this.tokenExpiry.getTime() - 5 * 60 * 1000)) {
+        this.logger.debug('Using in-memory cached M-Pesa access token (Redis unavailable)');
+        return this.accessToken;
+      }
     }
 
+    // 2. Need to refresh - acquire distributed lock
+    // This ensures ONLY ONE pod refreshes the token at a time
+    const lockValue = await this.redisService.acquireLock(
+      MPESA_TOKEN_LOCK_KEY,
+      MPESA_TOKEN_LOCK_TTL_SECONDS,
+      10, // retries
+      200, // retry delay ms
+    );
+
+    if (!lockValue && this.redisService.isAvailable()) {
+      // Couldn't get lock, another pod is refreshing
+      // Wait a bit and try cache again
+      this.logger.debug('Lock not acquired, waiting for another pod to refresh token');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const cachedAfterWait = await this.redisService.get(MPESA_TOKEN_CACHE_KEY);
+      if (cachedAfterWait) {
+        return cachedAfterWait;
+      }
+
+      // Still no token, try one more time
+      throw new HttpException(
+        'Failed to get M-Pesa access token - concurrent refresh timeout',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    try {
+      // 3. Double-check cache after acquiring lock (another pod may have just refreshed)
+      if (this.redisService.isAvailable()) {
+        const cachedAfterLock = await this.redisService.get(MPESA_TOKEN_CACHE_KEY);
+        if (cachedAfterLock) {
+          this.logger.debug('Token was refreshed by another pod while waiting for lock');
+          return cachedAfterLock;
+        }
+      }
+
+      // 4. Actually fetch new token from Safaricom
+      const token = await this.fetchTokenFromSafaricom();
+
+      // 5. Store in Redis cache for all pods to use
+      if (this.redisService.isAvailable()) {
+        await this.redisService.set(MPESA_TOKEN_CACHE_KEY, token, MPESA_TOKEN_CACHE_TTL_SECONDS);
+        this.logger.log('M-Pesa access token refreshed and cached in Redis');
+      } else {
+        // Fallback: store in memory
+        this.accessToken = token;
+        this.tokenExpiry = new Date(Date.now() + MPESA_TOKEN_CACHE_TTL_SECONDS * 1000);
+        this.logger.log('M-Pesa access token refreshed (in-memory only - Redis unavailable)');
+      }
+
+      return token;
+    } finally {
+      // 6. Release lock
+      if (lockValue) {
+        await this.redisService.releaseLock(MPESA_TOKEN_LOCK_KEY, lockValue);
+      }
+    }
+  }
+
+  /**
+   * Fetch access token from Safaricom OAuth endpoint
+   *
+   * Per P1-005: Enhanced error handling with specific exception types
+   * @private
+   */
+  private async fetchTokenFromSafaricom(): Promise<string> {
     const endpoints = MPESA_ENDPOINTS[this.environment];
     const auth = Buffer.from(`${this.consumerKey}:${this.consumerSecret}`).toString('base64');
 
@@ -167,20 +372,69 @@ export class MpesaService {
         headers: {
           Authorization: `Basic ${auth}`,
         },
+        timeout: 15000, // 15 second timeout for auth
       });
 
-      this.accessToken = response.data.access_token;
-      // M-Pesa tokens expire in 1 hour (3599 seconds)
-      this.tokenExpiry = new Date(Date.now() + 3500 * 1000);
+      const token = response.data.access_token;
+      if (!token) {
+        throw new MpesaAuthException('No access_token in OAuth response');
+      }
 
-      this.logger.debug('M-Pesa access token refreshed');
-      return this.accessToken as string;
+      return token;
     } catch (error) {
-      this.logger.error('Failed to get M-Pesa access token', error);
-      throw new HttpException(
-        'Failed to authenticate with payment provider',
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
+      // Handle Axios errors with specific types
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError;
+
+        // Timeout
+        if (axiosError.code === 'ECONNABORTED' || axiosError.code === 'ETIMEDOUT') {
+          const logError = formatMpesaLogError('OAuth token fetch', error, {
+            environment: this.environment,
+          });
+          this.logger.error(logError.message, logError.details);
+          throw new MpesaTimeoutException('M-Pesa OAuth request timed out');
+        }
+
+        // Connection refused / network error
+        if (axiosError.code === 'ECONNREFUSED' || axiosError.code === 'ENOTFOUND') {
+          const logError = formatMpesaLogError('OAuth token fetch', error, {
+            environment: this.environment,
+          });
+          this.logger.error(logError.message, logError.details);
+          throw new MpesaServiceUnavailableException('Cannot connect to M-Pesa service');
+        }
+
+        // HTTP error responses
+        if (axiosError.response) {
+          const status = axiosError.response.status;
+          const logError = formatMpesaLogError('OAuth token fetch', error, {
+            environment: this.environment,
+            httpStatus: status,
+          });
+          this.logger.error(logError.message, logError.details);
+
+          if (status === 401 || status === 403) {
+            throw new MpesaAuthException('Invalid M-Pesa credentials');
+          }
+          if (status >= 500) {
+            throw new MpesaServiceUnavailableException('M-Pesa service error');
+          }
+        }
+      }
+
+      // If it's already one of our exceptions, rethrow
+      if (error instanceof MpesaAuthException ||
+          error instanceof MpesaServiceUnavailableException ||
+          error instanceof MpesaTimeoutException) {
+        throw error;
+      }
+
+      // Generic error
+      const logError = formatMpesaLogError('OAuth token fetch', error, {
+        environment: this.environment,
+      });
+      this.logger.error(logError.message, logError.details);
+      throw new MpesaAuthException('Failed to authenticate with M-Pesa');
     }
   }
 

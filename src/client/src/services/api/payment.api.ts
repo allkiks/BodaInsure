@@ -99,6 +99,17 @@ export const paymentApi = {
   },
 
   /**
+   * Refresh payment status by querying M-Pesa directly
+   * Use when callback may have been missed (timeout scenarios)
+   */
+  refreshStatus: async (paymentRequestId: string): Promise<PaymentStatusResponse> => {
+    const response = await apiClient.post<{ data: PaymentStatusResponse }>(
+      `${API_ENDPOINTS.PAYMENTS}/status/${paymentRequestId}/refresh`
+    );
+    return response.data.data;
+  },
+
+  /**
    * Get payment history for current user
    */
   getHistory: async (filters?: PaymentHistoryFilters): Promise<PaginatedResponse<Payment>> => {

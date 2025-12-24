@@ -212,6 +212,12 @@ export class PaymentService {
 
   /**
    * Process M-Pesa callback
+   *
+   * Security: Enhanced validation per P0-002 in mpesa_remediation.md
+   * - Validates checkoutRequestId exists in our database
+   * - Validates amount matches expected amount (within tolerance)
+   * - Validates phone number matches (last 4 digits)
+   * - Logs suspicious callbacks for security audit
    */
   async processCallback(callbackData: ParsedCallbackData): Promise<CallbackProcessResult> {
     // Find payment request
@@ -219,9 +225,17 @@ export class PaymentService {
       where: { checkoutRequestId: callbackData.checkoutRequestId },
     });
 
+    // P0-002: Validate payment request exists
     if (!paymentRequest) {
       this.logger.warn(
-        `Callback for unknown checkoutRequestId: ${callbackData.checkoutRequestId}`,
+        `[SECURITY] Callback for unknown checkoutRequestId - potential fraud attempt`,
+        {
+          checkoutRequestId: callbackData.checkoutRequestId,
+          merchantRequestId: callbackData.merchantRequestId,
+          amount: callbackData.amount,
+          phone: callbackData.phoneNumber ? `***${callbackData.phoneNumber.slice(-4)}` : 'unknown',
+          timestamp: new Date().toISOString(),
+        },
       );
       return {
         success: false,
@@ -229,8 +243,63 @@ export class PaymentService {
       };
     }
 
-    // Check if already processed
+    // P0-002: Validate amount matches (for successful callbacks)
+    if (callbackData.isSuccessful && callbackData.amount) {
+      const expectedAmountKes = paymentRequest.getAmountInKes();
+      const receivedAmountKes = callbackData.amount;
+      // Allow 1 KES tolerance for rounding
+      if (Math.abs(receivedAmountKes - expectedAmountKes) > 1) {
+        this.logger.error(
+          `[SECURITY] Amount mismatch in callback - potential fraud attempt`,
+          {
+            paymentRequestId: paymentRequest.id,
+            expectedAmount: expectedAmountKes,
+            receivedAmount: receivedAmountKes,
+            difference: receivedAmountKes - expectedAmountKes,
+            checkoutRequestId: callbackData.checkoutRequestId,
+            timestamp: new Date().toISOString(),
+          },
+        );
+        // Don't process - potential fraud attempt
+        // Update status to flag for manual review
+        paymentRequest.status = PaymentRequestStatus.FAILED;
+        paymentRequest.resultDescription = `Amount mismatch: expected ${expectedAmountKes}, received ${receivedAmountKes}`;
+        paymentRequest.callbackPayload = callbackData as unknown as Record<string, unknown>;
+        await this.paymentRequestRepository.save(paymentRequest);
+
+        return {
+          success: false,
+          paymentRequestId: paymentRequest.id,
+          message: 'Amount validation failed',
+        };
+      }
+    }
+
+    // P0-002: Validate phone number (last 4 digits) for successful callbacks
+    if (callbackData.isSuccessful && callbackData.phoneNumber && paymentRequest.phone) {
+      const expectedPhoneLast4 = paymentRequest.phone.slice(-4);
+      const receivedPhoneLast4 = callbackData.phoneNumber.slice(-4);
+      if (expectedPhoneLast4 !== receivedPhoneLast4) {
+        this.logger.warn(
+          `[SECURITY] Phone number mismatch in callback`,
+          {
+            paymentRequestId: paymentRequest.id,
+            expectedPhoneLast4,
+            receivedPhoneLast4,
+            checkoutRequestId: callbackData.checkoutRequestId,
+            timestamp: new Date().toISOString(),
+          },
+        );
+        // Log but don't reject - phone format may differ slightly
+        // This is informational for security monitoring
+      }
+    }
+
+    // Check if already processed (idempotency)
     if (paymentRequest.status === PaymentRequestStatus.COMPLETED) {
+      this.logger.debug(
+        `Duplicate callback received for already processed payment: ${paymentRequest.id}`,
+      );
       return {
         success: true,
         paymentRequestId: paymentRequest.id,
@@ -463,5 +532,355 @@ export class PaymentService {
    */
   isMpesaConfigured(): boolean {
     return this.mpesaService.isConfigured();
+  }
+
+  /**
+   * Refresh payment status by querying M-Pesa directly
+   *
+   * Per P1-004 in mpesa_remediation.md
+   *
+   * Use when a callback may have been missed. Queries M-Pesa
+   * for the current status and updates the payment request accordingly.
+   *
+   * @param requestId - Payment request ID
+   * @param userId - User ID (for ownership validation)
+   */
+  async refreshPaymentStatus(
+    requestId: string,
+    userId: string,
+  ): Promise<{
+    success: boolean;
+    status: string;
+    message: string;
+    mpesaReceiptNumber?: string;
+  }> {
+    const paymentRequest = await this.paymentRequestRepository.findOne({
+      where: { id: requestId },
+    });
+
+    if (!paymentRequest) {
+      throw new NotFoundException('Payment request not found');
+    }
+
+    // Verify ownership
+    if (paymentRequest.userId !== userId) {
+      throw new NotFoundException('Payment request not found');
+    }
+
+    // If already in final state, return current status
+    if (paymentRequest.status === PaymentRequestStatus.COMPLETED) {
+      return {
+        success: true,
+        status: paymentRequest.status,
+        message: 'Payment already completed',
+        mpesaReceiptNumber: paymentRequest.mpesaReceiptNumber ?? undefined,
+      };
+    }
+
+    if (paymentRequest.status === PaymentRequestStatus.FAILED ||
+        paymentRequest.status === PaymentRequestStatus.CANCELLED ||
+        paymentRequest.status === PaymentRequestStatus.TIMEOUT) {
+      return {
+        success: false,
+        status: paymentRequest.status,
+        message: paymentRequest.resultDescription ?? 'Payment failed',
+      };
+    }
+
+    // Only query M-Pesa if in SENT status (waiting for callback)
+    if (paymentRequest.status !== PaymentRequestStatus.SENT) {
+      return {
+        success: false,
+        status: paymentRequest.status,
+        message: 'Payment not in queryable state',
+      };
+    }
+
+    // Check if we have a checkout request ID
+    if (!paymentRequest.checkoutRequestId) {
+      return {
+        success: false,
+        status: paymentRequest.status,
+        message: 'No checkout request ID available',
+      };
+    }
+
+    // Query M-Pesa for status
+    this.logger.log(`Querying M-Pesa for payment status: ${requestId.slice(0, 8)}...`);
+    const queryResult = await this.mpesaService.querySTKStatus(paymentRequest.checkoutRequestId);
+
+    if (!queryResult.success) {
+      // Query failed but doesn't mean payment failed
+      return {
+        success: false,
+        status: paymentRequest.status,
+        message: queryResult.errorMessage ?? 'Could not query M-Pesa',
+      };
+    }
+
+    // Process the query result
+    if (queryResult.resultCode === '0') {
+      // Payment successful - simulate callback processing
+      const callbackData = {
+        merchantRequestId: paymentRequest.merchantRequestId ?? '',
+        checkoutRequestId: paymentRequest.checkoutRequestId,
+        resultCode: 0,
+        resultDesc: queryResult.resultDesc ?? 'Success',
+        isSuccessful: true,
+        mpesaReceiptNumber: queryResult.mpesaReceiptNumber,
+        amount: paymentRequest.getAmountInKes(),
+        phoneNumber: paymentRequest.phone,
+      };
+
+      const result = await this.processCallback(callbackData);
+
+      return {
+        success: result.success,
+        status: PaymentRequestStatus.COMPLETED,
+        message: 'Payment completed',
+        mpesaReceiptNumber: queryResult.mpesaReceiptNumber,
+      };
+    } else {
+      // Payment failed or still pending
+      const resultCode = parseInt(queryResult.resultCode ?? '1', 10);
+      const newStatus = this.mapResultCodeToStatus(resultCode);
+
+      // Update payment request if status changed
+      if (newStatus !== PaymentRequestStatus.SENT) {
+        paymentRequest.status = newStatus;
+        paymentRequest.resultCode = queryResult.resultCode;
+        paymentRequest.resultDescription = queryResult.resultDesc;
+        await this.paymentRequestRepository.save(paymentRequest);
+      }
+
+      return {
+        success: false,
+        status: newStatus,
+        message: queryResult.resultDesc ?? 'Payment not completed',
+      };
+    }
+  }
+
+  /**
+   * Poll stale payment requests
+   *
+   * Per P1-004 in mpesa_remediation.md
+   *
+   * Finds payment requests in SENT status older than the specified age
+   * and queries M-Pesa for their current status.
+   *
+   * @param maxAgeMinutes - Maximum age of requests to poll (default: 3 minutes)
+   * @param limit - Maximum number of requests to poll per run (default: 10)
+   */
+  async pollStalePaymentRequests(
+    maxAgeMinutes: number = 3,
+    limit: number = 10,
+  ): Promise<{ polled: number; updated: number; errors: number }> {
+    const cutoffTime = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+
+    // Find stale requests
+    const staleRequests = await this.paymentRequestRepository.find({
+      where: {
+        status: PaymentRequestStatus.SENT,
+        createdAt: LessThan(cutoffTime),
+      },
+      order: { createdAt: 'ASC' },
+      take: limit,
+    });
+
+    if (staleRequests.length === 0) {
+      return { polled: 0, updated: 0, errors: 0 };
+    }
+
+    this.logger.log(`Polling ${staleRequests.length} stale payment requests`);
+
+    let updated = 0;
+    let errors = 0;
+
+    for (const request of staleRequests) {
+      try {
+        if (!request.checkoutRequestId) {
+          // No checkout ID, mark as failed
+          request.status = PaymentRequestStatus.FAILED;
+          request.resultDescription = 'No checkout request ID - cannot query status';
+          await this.paymentRequestRepository.save(request);
+          updated++;
+          continue;
+        }
+
+        // Query M-Pesa
+        const queryResult = await this.mpesaService.querySTKStatus(request.checkoutRequestId);
+
+        if (queryResult.resultCode === '0') {
+          // Success - process as callback
+          const callbackData = {
+            merchantRequestId: request.merchantRequestId ?? '',
+            checkoutRequestId: request.checkoutRequestId,
+            resultCode: 0,
+            resultDesc: queryResult.resultDesc ?? 'Success',
+            isSuccessful: true,
+            mpesaReceiptNumber: queryResult.mpesaReceiptNumber,
+            amount: request.getAmountInKes(),
+            phoneNumber: request.phone,
+          };
+
+          await this.processCallback(callbackData);
+          updated++;
+
+          this.logger.log(
+            `Stale payment resolved: ${request.id.slice(0, 8)}... -> COMPLETED`,
+          );
+        } else if (queryResult.resultCode) {
+          // Failed or cancelled
+          const resultCode = parseInt(queryResult.resultCode, 10);
+          request.status = this.mapResultCodeToStatus(resultCode);
+          request.resultCode = queryResult.resultCode;
+          request.resultDescription = queryResult.resultDesc;
+          await this.paymentRequestRepository.save(request);
+          updated++;
+
+          this.logger.log(
+            `Stale payment resolved: ${request.id.slice(0, 8)}... -> ${request.status}`,
+          );
+        }
+        // If queryResult has no resultCode, the query failed - leave as SENT for next poll
+
+      } catch (error) {
+        this.logger.error(
+          `Error polling payment request ${request.id.slice(0, 8)}...`,
+          error,
+        );
+        errors++;
+      }
+    }
+
+    this.logger.log(
+      `Stale payment polling complete: polled=${staleRequests.length} updated=${updated} errors=${errors}`,
+    );
+
+    return {
+      polled: staleRequests.length,
+      updated,
+      errors,
+    };
+  }
+
+  /**
+   * Process B2C (refund) callback from M-Pesa
+   *
+   * Per P1-001 in mpesa_remediation.md
+   *
+   * @param callbackData - Parsed B2C callback data
+   */
+  async processB2cCallback(callbackData: import('./mpesa.service.js').ParsedB2cCallbackData): Promise<{ success: boolean; message: string }> {
+    // Find refund transaction by originatorConversationId
+    const transaction = await this.transactionRepository.findOne({
+      where: {
+        type: TransactionType.REFUND,
+        mpesaMerchantRequestId: callbackData.originatorConversationId,
+      },
+    });
+
+    if (!transaction) {
+      this.logger.warn(
+        `[SECURITY] B2C callback for unknown originatorConversationId: ${callbackData.originatorConversationId}`,
+        {
+          conversationId: callbackData.conversationId,
+          resultCode: callbackData.resultCode,
+        },
+      );
+      return {
+        success: false,
+        message: 'Refund transaction not found',
+      };
+    }
+
+    // Check if already processed
+    if (transaction.status === TransactionStatus.COMPLETED || transaction.status === TransactionStatus.FAILED) {
+      this.logger.debug(`B2C callback already processed for transaction: ${transaction.id}`);
+      return {
+        success: true,
+        message: 'Refund already processed',
+      };
+    }
+
+    // Update transaction based on result
+    if (callbackData.isSuccessful) {
+      transaction.status = TransactionStatus.COMPLETED;
+      transaction.mpesaReceiptNumber = callbackData.transactionReceipt;
+      transaction.completedAt = new Date();
+      transaction.resultCode = String(callbackData.resultCode);
+      transaction.resultDescription = callbackData.resultDesc;
+
+      this.logger.log(
+        `B2C refund completed: txnId=${transaction.id.slice(0, 8)}... receipt=${callbackData.transactionReceipt}`,
+      );
+    } else {
+      transaction.status = TransactionStatus.FAILED;
+      transaction.resultCode = String(callbackData.resultCode);
+      transaction.resultDescription = callbackData.resultDesc;
+
+      this.logger.warn(
+        `B2C refund failed: txnId=${transaction.id.slice(0, 8)}... code=${callbackData.resultCode} desc=${callbackData.resultDesc}`,
+      );
+    }
+
+    await this.transactionRepository.save(transaction);
+
+    return {
+      success: true,
+      message: callbackData.isSuccessful ? 'Refund completed' : 'Refund failed',
+    };
+  }
+
+  /**
+   * Process B2C timeout callback from M-Pesa
+   *
+   * Per P1-001 in mpesa_remediation.md
+   *
+   * @param originatorConversationId - The originator conversation ID from the B2C request
+   */
+  async processB2cTimeout(originatorConversationId: string): Promise<{ success: boolean; message: string }> {
+    // Find refund transaction by originatorConversationId
+    const transaction = await this.transactionRepository.findOne({
+      where: {
+        type: TransactionType.REFUND,
+        mpesaMerchantRequestId: originatorConversationId,
+      },
+    });
+
+    if (!transaction) {
+      this.logger.warn(
+        `B2C timeout for unknown originatorConversationId: ${originatorConversationId}`,
+      );
+      return {
+        success: false,
+        message: 'Refund transaction not found',
+      };
+    }
+
+    // Check if already processed
+    if (transaction.status === TransactionStatus.COMPLETED || transaction.status === TransactionStatus.FAILED) {
+      this.logger.debug(`B2C timeout received but transaction already processed: ${transaction.id}`);
+      return {
+        success: true,
+        message: 'Refund already processed',
+      };
+    }
+
+    // Mark as timeout - can be retried
+    transaction.status = TransactionStatus.PENDING; // Keep pending for retry
+    transaction.resultDescription = 'B2C request timed out - pending retry';
+
+    await this.transactionRepository.save(transaction);
+
+    this.logger.warn(
+      `B2C refund timeout: txnId=${transaction.id.slice(0, 8)}... - marked for retry`,
+    );
+
+    return {
+      success: true,
+      message: 'Refund timeout processed - pending retry',
+    };
   }
 }

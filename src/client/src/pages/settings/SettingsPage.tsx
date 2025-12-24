@@ -3,12 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Settings,
   Bell,
-  Shield,
   Database,
-  Clock,
   Server,
   FileText,
-  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';

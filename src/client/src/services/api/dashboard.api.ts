@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 import { API_ENDPOINTS } from '@/config/constants';
-import type { DashboardMetrics, EnrollmentMetrics, PaymentMetrics, PolicyMetrics, TrendData } from '@/types';
+import type { EnrollmentMetrics, PaymentMetrics, PolicyMetrics, TrendData } from '@/types';
 
 interface DashboardOverview {
   enrollment: {

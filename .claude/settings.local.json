@@ -63,7 +63,10 @@
       "Bash(docker start:*)",
       "Bash(del \"D:\\\\repos\\\\BODAINSURE\\\\src\\\\server\\\\src\\\\database\\\\migrations\\\\1735004000000-FixDocumentSchemas.ts\")",
       "Bash(timeout 30 sh:*)",
-      "Bash(timeout 10 docker logs:*)"
+      "Bash(timeout 10 docker logs:*)",
+      "Bash(D:/repos/BODAINSURE/src/client/node_modules/.bin/tsc:*)",
+      "Bash(docker rm:*)",
+      "Bash(grep:*)"
     ]
   }
 }

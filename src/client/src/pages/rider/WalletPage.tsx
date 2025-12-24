@@ -17,9 +17,15 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { walletApi } from '@/services/api/wallet.api';
 import { PAYMENT_AMOUNTS } from '@/config/constants';
-import type { PaymentStatus } from '@/types';
+// PaymentStatus imported for type reference
 
-const statusConfig: Record<PaymentStatus, { label: string; icon: React.ReactNode; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+// Status config using UPPERCASE to match server responses
+const statusConfig: Record<string, { label: string; icon: React.ReactNode; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+  COMPLETED: { label: 'Completed', icon: <CheckCircle className="h-3 w-3" />, variant: 'default' },
+  PENDING: { label: 'Pending', icon: <Clock className="h-3 w-3" />, variant: 'secondary' },
+  FAILED: { label: 'Failed', icon: <XCircle className="h-3 w-3" />, variant: 'destructive' },
+  CANCELLED: { label: 'Cancelled', icon: <XCircle className="h-3 w-3" />, variant: 'outline' },
+  // Fallback for lowercase (backward compatibility)
   completed: { label: 'Completed', icon: <CheckCircle className="h-3 w-3" />, variant: 'default' },
   pending: { label: 'Pending', icon: <Clock className="h-3 w-3" />, variant: 'secondary' },
   failed: { label: 'Failed', icon: <XCircle className="h-3 w-3" />, variant: 'destructive' },
@@ -179,7 +185,8 @@ export default function WalletPage() {
           ) : (
             <div className="space-y-3">
               {recentTransactions.slice(0, 5).map((tx) => {
-                const config = statusConfig[tx.status];
+                const defaultConfig = { label: 'Pending', icon: <Clock className="h-3 w-3" />, variant: 'secondary' as const };
+                const config = statusConfig[tx.status] ?? defaultConfig;
                 return (
                   <div
                     key={tx.id}
@@ -194,6 +201,11 @@ export default function WalletPage() {
                         <p className="text-xs text-muted-foreground">
                           {formatDate(tx.createdAt)}
                         </p>
+                        {tx.mpesaReceiptNumber && (
+                          <p className="text-xs font-mono text-muted-foreground">
+                            Ref: {tx.mpesaReceiptNumber}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="text-right">

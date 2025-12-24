@@ -3,9 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   User,
-  Phone,
-  Mail,
-  Calendar,
   CreditCard,
   Shield,
   FileCheck,
@@ -15,7 +12,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -169,7 +166,7 @@ export default function UserDetailPage() {
               <FileCheck className="mr-2 h-4 w-4" />
               Reset KYC
             </Button>
-            {user.status === 'active' ? (
+            {user.status === 'ACTIVE' ? (
               <Button
                 variant="outline"
                 size="sm"

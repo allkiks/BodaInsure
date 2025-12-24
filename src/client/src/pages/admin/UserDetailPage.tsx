@@ -6,7 +6,6 @@ import {
   Phone,
   Mail,
   Shield,
-  Wallet,
   CreditCard,
   FileText,
   ArrowLeft,
@@ -18,6 +17,7 @@ import {
   Ban,
   UserCheck,
   Send,
+  FileSearch,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,37 +36,45 @@ import {
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { maskPhone, maskNationalId, formatDate, formatCurrency } from '@/lib/utils';
 import { adminApi } from '@/services/api/admin.api';
-import { paymentApi } from '@/services/api/payment.api';
 import { PAYMENT_AMOUNTS } from '@/config/constants';
-import type { UserStatus, KycStatus, PaymentStatus, PolicyStatus } from '@/types';
+import type { UserStatus, KycStatus, PaymentStatus, PolicyStatus, DocumentStatus } from '@/types';
 
 const statusConfig: Record<UserStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  active: { variant: 'default' },
-  inactive: { variant: 'secondary' },
-  suspended: { variant: 'destructive' },
-  pending: { variant: 'outline' },
+  ACTIVE: { variant: 'default' },
+  INACTIVE: { variant: 'secondary' },
+  SUSPENDED: { variant: 'destructive' },
+  PENDING: { variant: 'outline' },
 };
 
 const kycConfig: Record<KycStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: React.ReactNode }> = {
-  approved: { variant: 'default', icon: <CheckCircle className="h-4 w-4" /> },
-  pending: { variant: 'secondary', icon: <Clock className="h-4 w-4" /> },
-  rejected: { variant: 'destructive', icon: <XCircle className="h-4 w-4" /> },
-  expired: { variant: 'outline', icon: <AlertCircle className="h-4 w-4" /> },
+  APPROVED: { variant: 'default', icon: <CheckCircle className="h-4 w-4" /> },
+  PENDING: { variant: 'secondary', icon: <Clock className="h-4 w-4" /> },
+  REJECTED: { variant: 'destructive', icon: <XCircle className="h-4 w-4" /> },
+  EXPIRED: { variant: 'outline', icon: <AlertCircle className="h-4 w-4" /> },
 };
 
 const paymentStatusConfig: Record<PaymentStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  completed: { variant: 'default' },
-  pending: { variant: 'secondary' },
-  failed: { variant: 'destructive' },
-  cancelled: { variant: 'outline' },
+  COMPLETED: { variant: 'default' },
+  PENDING: { variant: 'secondary' },
+  FAILED: { variant: 'destructive' },
+  CANCELLED: { variant: 'outline' },
 };
 
 const policyStatusConfig: Record<PolicyStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  active: { variant: 'default' },
-  pending: { variant: 'secondary' },
-  expired: { variant: 'outline' },
-  cancelled: { variant: 'destructive' },
-  lapsed: { variant: 'destructive' },
+  ACTIVE: { variant: 'default' },
+  PENDING: { variant: 'secondary' },
+  EXPIRED: { variant: 'outline' },
+  CANCELLED: { variant: 'destructive' },
+  LAPSED: { variant: 'destructive' },
+};
+
+// Document status config (includes PROCESSING and IN_REVIEW states)
+const documentStatusConfig: Record<DocumentStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: React.ReactNode }> = {
+  APPROVED: { variant: 'default', icon: <CheckCircle className="h-4 w-4" /> },
+  PENDING: { variant: 'secondary', icon: <Clock className="h-4 w-4" /> },
+  PROCESSING: { variant: 'secondary', icon: <FileSearch className="h-4 w-4" /> },
+  IN_REVIEW: { variant: 'outline', icon: <FileSearch className="h-4 w-4" /> },
+  REJECTED: { variant: 'destructive', icon: <XCircle className="h-4 w-4" /> },
 };
 
 export default function AdminUserDetailPage() {
@@ -172,7 +180,7 @@ export default function AdminUserDetailPage() {
           <p className="text-muted-foreground">User ID: {user.id}</p>
         </div>
         <div className="flex gap-2">
-          {user.status === 'active' ? (
+          {user.status === 'ACTIVE' ? (
             <Button
               variant="outline"
               onClick={() => setActionDialog({ type: 'deactivate', open: true })}
@@ -415,8 +423,8 @@ export default function AdminUserDetailPage() {
                         <p className="font-medium capitalize">
                           {doc.type.replace(/_/g, ' ')}
                         </p>
-                        <Badge variant={kycConfig[doc.status].variant} className="gap-1">
-                          {kycConfig[doc.status].icon}
+                        <Badge variant={documentStatusConfig[doc.status].variant} className="gap-1">
+                          {documentStatusConfig[doc.status].icon}
                           {doc.status}
                         </Badge>
                       </div>

@@ -4,8 +4,9 @@
  */
 
 // Payment amounts (FIXED per CLAUDE.md)
-export const DEPOSIT_AMOUNT = 1048; // KES
-export const DAILY_AMOUNT = 87; // KES
+// TODO: Change back to 1048 for production
+export const DEPOSIT_AMOUNT = 5; // KES - DEV ONLY (production: 1048)
+export const DAILY_AMOUNT = 1; // KES - DEV ONLY (production: 87)
 export const TOTAL_DAILY_PAYMENTS = 30;
 export const TOTAL_ANNUAL = 3658; // KES (1048 + 87*30)
 

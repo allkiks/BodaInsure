@@ -1,11 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   Users,
-  UserCheck,
   FileCheck,
   CreditCard,
   TrendingUp,
-  MapPin,
 } from 'lucide-react';
 import {
   Card,
@@ -219,7 +217,7 @@ export default function EnrollmentDashboard() {
                   <XAxis type="number" />
                   <YAxis dataKey="stage" type="category" width={100} />
                   <Tooltip
-                    formatter={(value, name) => [
+                    formatter={(value, _name) => [
                       `${value.toLocaleString()} (${funnelData.find(d => d.count === value)?.percentage}%)`,
                       'Users'
                     ]}

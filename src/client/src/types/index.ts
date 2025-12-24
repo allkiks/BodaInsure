@@ -61,8 +61,11 @@ export interface Payment {
   type: PaymentType;
   status: PaymentStatus;
   mpesaRef?: string;
+  mpesaReceiptNumber?: string;
   phone: string;
   idempotencyKey: string;
+  failureReason?: string;
+  resultCode?: string;
   createdAt: string;
   updatedAt: string;
 }

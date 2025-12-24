@@ -60,7 +60,7 @@ export default function AdminLoginPage() {
           username: response.user.username,
           role: response.user.role as UserType['role'],
           status: response.user.status as UserType['status'],
-          kycStatus: 'approved',
+          kycStatus: 'APPROVED',
           language: 'en',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),

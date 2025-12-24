@@ -30,7 +30,7 @@ export default function OrganizationFormPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
-  const isEditing = id && id !== 'new';
+  const isEditing = Boolean(id && id !== 'new');
 
   const [formData, setFormData] = useState<CreateOrganizationRequest>({
     name: '',

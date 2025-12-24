@@ -182,6 +182,10 @@ services:
   # DEVELOPMENT TOOLS (optional)
   # ===========================================
 
+  # ngrok for M-Pesa callback tunneling is in a separate compose file
+  # to prevent URL changes on container restarts.
+  # See: docker-compose.ngrok.yml
+
   # Redis Commander (Web UI for Redis)
   redis-commander:
     image: rediscommander/redis-commander:latest

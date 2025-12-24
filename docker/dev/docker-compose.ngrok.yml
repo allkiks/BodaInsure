@@ -1,0 +1,35 @@
+# BodaInsure ngrok Tunnel for M-Pesa Callbacks
+#
+# This runs separately from the main docker-compose to prevent URL changes
+# on container restarts. Start this once and keep it running.
+#
+# Usage:
+#   docker compose -f docker/dev/docker-compose.ngrok.yml up -d
+#
+# Get your ngrok URL:
+#   docker logs bodainsure-ngrok-dev
+#   OR visit http://localhost:4040
+#
+# Then update .env.docker with the ngrok URL for MPESA_CALLBACK_URL
+
+services:
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: bodainsure-ngrok-dev
+    restart: unless-stopped
+    command:
+      - "http"
+      - "host.docker.internal:3000"
+      - "--log=stdout"
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    ports:
+      - "4040:4040"  # ngrok web interface
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - bodainsure-dev-network
+
+networks:
+  bodainsure-dev-network:
+    external: true

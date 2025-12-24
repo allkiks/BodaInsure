@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 import { API_ENDPOINTS, PAGINATION } from '@/config/constants';
-import type { KycDocument, PaginatedResponse, User, DocumentType, KycStatus } from '@/types';
+import type { KycDocument, PaginatedResponse, User, DocumentType, KycStatus, DocumentStatus } from '@/types';
 
 interface KycQueueParams {
   status?: string;
@@ -176,10 +176,12 @@ export const kycApi = {
     return {
       data: documents.map(doc => ({
         id: doc.id,
+        userId: doc.userId,
         type: doc.documentType as DocumentType,
-        status: doc.status as KycStatus,
+        status: doc.status as DocumentStatus,
+        fileUrl: doc.storageKey || '',
         createdAt: doc.createdAt,
-        uploadedAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
         rejectionReason: doc.rejectionReason,
         user: { id: doc.userId, phone: '', firstName: '', lastName: '' },
       })),
@@ -202,12 +204,13 @@ export const kycApi = {
     const doc = response.data.data;
     return {
       id: doc.id,
+      userId: doc.userId,
       type: doc.documentType as DocumentType,
-      status: doc.status as KycStatus,
+      status: doc.status as DocumentStatus,
+      fileUrl: doc.storageKey || '',
       createdAt: doc.createdAt,
-      uploadedAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
       rejectionReason: doc.rejectionReason,
-      storageKey: doc.storageKey,
       user: { id: doc.userId, phone: '', firstName: '', lastName: '' },
     };
   },

@@ -24,6 +24,7 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
+import { MpesaCallbackGuard } from '../../../common/guards/mpesa-callback.guard.js';
 import { CurrentUser } from '../../identity/decorators/current-user.decorator.js';
 import { PaymentService } from '../services/payment.service.js';
 import { WalletService } from '../services/wallet.service.js';
@@ -221,6 +222,40 @@ export class PaymentController {
       resultCode: paymentRequest.resultCode ?? undefined,
       createdAt: paymentRequest.createdAt,
     };
+  }
+
+  /**
+   * Refresh payment status by querying M-Pesa
+   *
+   * Per P1-004 in mpesa_remediation.md
+   *
+   * Use this when a callback may have been missed.
+   * Queries M-Pesa directly for the current transaction status.
+   */
+  @Post('status/:requestId/refresh')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Refresh payment status',
+    description: 'Query M-Pesa directly to refresh payment status (use when callback may be missed)',
+  })
+  @ApiParam({ name: 'requestId', description: 'Payment request ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment status refreshed',
+  })
+  @ApiResponse({ status: 404, description: 'Payment request not found' })
+  async refreshPaymentStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+  ): Promise<{
+    success: boolean;
+    status: string;
+    message: string;
+    mpesaReceiptNumber?: string;
+  }> {
+    const result = await this.paymentService.refreshPaymentStatus(requestId, user.userId);
+    return result;
   }
 
   /**
@@ -589,14 +624,19 @@ export class MpesaCallbackController {
   /**
    * M-Pesa STK Push callback
    * This endpoint receives payment confirmations from M-Pesa
+   *
+   * Security: Protected by IP whitelist (MpesaCallbackGuard)
+   * Per P0-001 in mpesa_remediation.md
    */
   @Post('callback')
+  @UseGuards(MpesaCallbackGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'M-Pesa STK callback',
     description: 'Webhook endpoint for M-Pesa STK Push callbacks. Do not call directly.',
   })
   @ApiResponse({ status: 200, description: 'Callback processed' })
+  @ApiResponse({ status: 403, description: 'Callback source not authorized' })
   async handleCallback(@Body() body: MpesaCallbackBody): Promise<{ ResultCode: number; ResultDesc: string }> {
     this.logger.log('M-Pesa callback received');
 
@@ -628,17 +668,122 @@ export class MpesaCallbackController {
   /**
    * M-Pesa validation callback (optional)
    * Can be used to pre-validate transactions
+   *
+   * Security: Protected by IP whitelist (MpesaCallbackGuard)
+   * Per P0-001 in mpesa_remediation.md
    */
   @Post('validation')
+  @UseGuards(MpesaCallbackGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'M-Pesa validation callback',
     description: 'Optional validation endpoint for M-Pesa. Do not call directly.',
   })
   @ApiResponse({ status: 200, description: 'Validation response' })
+  @ApiResponse({ status: 403, description: 'Callback source not authorized' })
   async handleValidation(@Body() _body: unknown): Promise<{ ResultCode: number; ResultDesc: string }> {
     this.logger.log('M-Pesa validation received');
     // Accept all payments for now
     return { ResultCode: 0, ResultDesc: 'Accepted' };
+  }
+
+  /**
+   * B2C Result URL - receives refund/disbursement confirmations
+   *
+   * Per P1-001 in mpesa_remediation.md
+   *
+   * Security: Protected by IP whitelist (MpesaCallbackGuard)
+   */
+  @Post('b2c/result')
+  @UseGuards(MpesaCallbackGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'M-Pesa B2C result callback',
+    description: 'Webhook endpoint for M-Pesa B2C result callbacks. Do not call directly.',
+  })
+  @ApiResponse({ status: 200, description: 'B2C result processed' })
+  @ApiResponse({ status: 403, description: 'Callback source not authorized' })
+  async handleB2cResult(@Body() body: unknown): Promise<{ ResultCode: number; ResultDesc: string }> {
+    this.logger.log('M-Pesa B2C result callback received');
+
+    try {
+      // Parse B2C callback
+      const b2cBody = body as { Result?: { ConversationID?: string; OriginatorConversationID?: string; ResultCode?: number; ResultDesc?: string } };
+
+      if (!b2cBody.Result) {
+        this.logger.warn('Invalid B2C callback format - missing Result object');
+        return { ResultCode: 0, ResultDesc: 'Accepted' };
+      }
+
+      const callbackData = this.mpesaService.parseB2cCallback(body as import('../services/mpesa.service.js').B2cCallbackBody);
+
+      this.logger.log(
+        `B2C result: conversationId=${callbackData.conversationId} success=${callbackData.isSuccessful}`,
+        {
+          originatorConversationId: callbackData.originatorConversationId,
+          resultCode: callbackData.resultCode,
+          amount: callbackData.amount,
+        },
+      );
+
+      // Process the B2C callback (update refund transaction status)
+      await this.paymentService.processB2cCallback(callbackData);
+
+      return { ResultCode: 0, ResultDesc: 'Accepted' };
+    } catch (error) {
+      this.logger.error('B2C result callback processing error', error);
+      // Always return success to prevent M-Pesa retries
+      return { ResultCode: 0, ResultDesc: 'Accepted' };
+    }
+  }
+
+  /**
+   * B2C Queue Timeout URL - handles timeout scenarios for B2C requests
+   *
+   * Per P1-001 in mpesa_remediation.md
+   *
+   * Security: Protected by IP whitelist (MpesaCallbackGuard)
+   */
+  @Post('b2c/timeout')
+  @UseGuards(MpesaCallbackGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'M-Pesa B2C timeout callback',
+    description: 'Webhook endpoint for M-Pesa B2C timeout callbacks. Do not call directly.',
+  })
+  @ApiResponse({ status: 200, description: 'B2C timeout processed' })
+  @ApiResponse({ status: 403, description: 'Callback source not authorized' })
+  async handleB2cTimeout(@Body() body: unknown): Promise<{ ResultCode: number; ResultDesc: string }> {
+    this.logger.log('M-Pesa B2C timeout callback received');
+
+    try {
+      // Parse the timeout notification
+      const b2cBody = body as { Result?: { OriginatorConversationID?: string; ConversationID?: string } };
+
+      if (!b2cBody.Result) {
+        this.logger.warn('Invalid B2C timeout format - missing Result object');
+        return { ResultCode: 0, ResultDesc: 'Accepted' };
+      }
+
+      const originatorConversationId = b2cBody.Result.OriginatorConversationID;
+
+      this.logger.warn(
+        `B2C timeout: originatorConversationId=${originatorConversationId}`,
+        {
+          conversationId: b2cBody.Result.ConversationID,
+        },
+      );
+
+      // Mark refund as timed out (can be retried later)
+      if (originatorConversationId) {
+        await this.paymentService.processB2cTimeout(originatorConversationId);
+      }
+
+      return { ResultCode: 0, ResultDesc: 'Accepted' };
+    } catch (error) {
+      this.logger.error('B2C timeout callback processing error', error);
+      // Always return success to prevent M-Pesa retries
+      return { ResultCode: 0, ResultDesc: 'Accepted' };
+    }
   }
 }

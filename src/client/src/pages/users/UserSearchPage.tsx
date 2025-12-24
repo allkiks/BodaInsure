@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search, User, Phone, FileText, ChevronRight } from 'lucide-react';
+import { Search, User, Phone, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Badge } from '@/components/ui/badge';
 import { adminApi } from '@/services/api/admin.api';
-import { maskPhone, formatDate } from '@/lib/utils';
+import { maskPhone } from '@/lib/utils';
 import type { User as UserType } from '@/types';
 
 const statusColors: Record<string, string> = {

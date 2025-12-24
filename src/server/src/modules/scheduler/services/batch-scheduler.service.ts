@@ -48,6 +48,7 @@ export class BatchSchedulerService {
   private gracePeriodCheckHandler?: () => Promise<number>;
   private reminderHandler?: () => Promise<number>;
   private policyExpiryReminderHandler?: () => Promise<number>;
+  private stalePaymentPollingHandler?: () => Promise<{ polled: number; updated: number; errors: number }>;
 
   constructor(private readonly configService: ConfigService) {
     this.isEnabled = this.configService.get<boolean>('SCHEDULER_ENABLED', true);
@@ -97,6 +98,17 @@ export class BatchSchedulerService {
   registerPolicyExpiryReminderHandler(handler: () => Promise<number>): void {
     this.policyExpiryReminderHandler = handler;
     this.logger.log('Policy expiry reminder handler registered');
+  }
+
+  /**
+   * Register the stale payment polling handler
+   * Per P1-004 in mpesa_remediation.md
+   */
+  registerStalePaymentPollingHandler(
+    handler: () => Promise<{ polled: number; updated: number; errors: number }>,
+  ): void {
+    this.stalePaymentPollingHandler = handler;
+    this.logger.log('Stale payment polling handler registered');
   }
 
   /**
@@ -198,6 +210,31 @@ export class BatchSchedulerService {
   }
 
   /**
+   * Stale payment polling - runs every 5 minutes
+   * Per P1-004 in mpesa_remediation.md
+   *
+   * Queries M-Pesa for payment requests that are older than 3 minutes
+   * and haven't received a callback yet. This catches missed callbacks.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES, { name: 'stale-payment-polling' })
+  async handleStalePaymentPolling(): Promise<void> {
+    if (!this.isEnabled) return;
+
+    try {
+      if (this.stalePaymentPollingHandler) {
+        const result = await this.stalePaymentPollingHandler();
+        if (result.polled > 0) {
+          this.logger.log(
+            `Stale payment polling: polled=${result.polled} updated=${result.updated} errors=${result.errors}`,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Stale payment polling job failed: ${error}`);
+    }
+  }
+
+  /**
    * Policy expiry notification - runs daily at 07:00 EAT (04:00 UTC)
    * Notify users whose policies expire in 7, 3, 1 days
    */
@@ -272,6 +309,7 @@ export class BatchSchedulerService {
       gracePeriodCheck: boolean;
       reminder: boolean;
       policyExpiryReminder: boolean;
+      stalePaymentPolling: boolean;
     };
     nextBatchTimes: {
       batch1: string;
@@ -311,6 +349,7 @@ export class BatchSchedulerService {
         gracePeriodCheck: !!this.gracePeriodCheckHandler,
         reminder: !!this.reminderHandler,
         policyExpiryReminder: !!this.policyExpiryReminderHandler,
+        stalePaymentPolling: !!this.stalePaymentPollingHandler,
       },
       nextBatchTimes: {
         batch1: `${nextBatch1.toISOString()} (08:00 EAT)`,

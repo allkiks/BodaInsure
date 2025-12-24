@@ -4,10 +4,11 @@
  */
 
 // Payment amounts (KES)
+// TODO: Change back to production values (1048, 87, 3658) for production
 export const PAYMENT_AMOUNTS = {
-  INITIAL_DEPOSIT: 1048,
-  DAILY_PAYMENT: 87,
-  TOTAL_ANNUAL: 3658,
+  INITIAL_DEPOSIT: 5, // DEV ONLY (production: 1048)
+  DAILY_PAYMENT: 1, // DEV ONLY (production: 87)
+  TOTAL_ANNUAL: 35, // DEV ONLY (production: 3658)
   DAYS_REQUIRED: 30,
 } as const;
 

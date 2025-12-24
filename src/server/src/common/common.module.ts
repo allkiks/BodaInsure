@@ -4,6 +4,7 @@ import { HttpExceptionFilter } from './filters/http-exception.filter.js';
 import { LoggingInterceptor } from './interceptors/logging.interceptor.js';
 import { TransformInterceptor } from './interceptors/transform.interceptor.js';
 import { EncryptionService } from './services/encryption.service.js';
+import { RedisService } from './services/redis.service.js';
 
 @Global()
 @Module({
@@ -21,7 +22,8 @@ import { EncryptionService } from './services/encryption.service.js';
       useClass: TransformInterceptor,
     },
     EncryptionService,
+    RedisService,
   ],
-  exports: [EncryptionService],
+  exports: [EncryptionService, RedisService],
 })
 export class CommonModule {}

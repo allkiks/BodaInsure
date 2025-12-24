@@ -4,7 +4,6 @@ import {
   Shield,
   Calendar,
   FileText,
-  Download,
   ChevronRight,
   AlertCircle,
   CheckCircle,
@@ -52,7 +51,8 @@ export default function PoliciesPage() {
   const policies = data?.data ?? [];
   // GAP-015: Use UPPERCASE status constants
   const activePolicies = policies.filter((p) => p.status === 'ACTIVE');
-  const hasActivePolicy = activePolicies.length > 0;
+  const firstActivePolicy = activePolicies[0];
+  const hasActivePolicy = firstActivePolicy !== undefined;
 
   return (
     <div className="space-y-6">
@@ -79,11 +79,11 @@ export default function PoliciesPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-green-100">Policy Number</p>
-                <p className="text-xl font-bold">{activePolicies[0].policyNumber}</p>
+                <p className="text-xl font-bold">{firstActivePolicy.policyNumber}</p>
               </div>
               <div className="text-right">
                 <p className="text-sm text-green-100">Valid Until</p>
-                <p className="text-xl font-bold">{formatDate(activePolicies[0].endDate)}</p>
+                <p className="text-xl font-bold">{formatDate(firstActivePolicy.endDate)}</p>
               </div>
             </div>
           </CardContent>

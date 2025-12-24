@@ -25,7 +25,14 @@ import { kycApi } from '@/services/api/kyc.api';
 import { useAuthStore } from '@/stores/authStore';
 import { PAYMENT_AMOUNTS } from '@/config/constants';
 import { getErrorMessage } from '@/services/api/client';
-import { getMpesaErrorMessage, isMpesaTimeout } from '@/lib/mpesa-errors';
+import {
+  getMpesaErrorMessage,
+  getMpesaErrorGuidance,
+  isMpesaTimeout,
+  isMpesaCancelled,
+  isMpesaRetryable,
+  isMpesaUserError,
+} from '@/lib/mpesa-errors';
 
 type PaymentType = 'deposit' | 'daily';
 type PaymentStep = 'select' | 'confirm' | 'processing' | 'success' | 'failed';
@@ -39,8 +46,10 @@ export default function PaymentPage() {
   const [step, setStep] = useState<PaymentStep>('select');
   const [paymentRequestId, setPaymentRequestId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [errorResultCode, setErrorResultCode] = useState<string | null>(null); // GAP-008: Track result code for timeout detection
+  const [errorResultCode, setErrorResultCode] = useState<string | null>(null);
   const [pollingCount, setPollingCount] = useState(0);
+  const [mpesaReceiptNumber, setMpesaReceiptNumber] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { data: walletData } = useQuery({
     queryKey: ['wallet'],
@@ -73,21 +82,46 @@ export default function PaymentPage() {
   const checkStatus = useMutation({
     mutationFn: paymentApi.checkStatus,
     onSuccess: (data) => {
-      // GAP-015: Use UPPERCASE status constants
       if (data.status === 'COMPLETED') {
+        setMpesaReceiptNumber(data.mpesaReceiptNumber ?? null);
         setStep('success');
       } else if (data.status === 'FAILED' || data.status === 'CANCELLED') {
-        // GAP-007: Use M-Pesa specific error messages when result code is available
         const message = data.resultCode
           ? getMpesaErrorMessage(data.resultCode)
           : data.failureReason ?? data.message;
         setErrorMessage(message ?? 'Payment failed');
-        // GAP-008: Track result code for timeout detection
         setErrorResultCode(data.resultCode?.toString() ?? null);
         setStep('failed');
       }
     },
   });
+
+  // Refresh status by querying M-Pesa directly (for missed callbacks)
+  const handleRefreshStatus = async () => {
+    if (!paymentRequestId) return;
+
+    setIsRefreshing(true);
+    try {
+      const data = await paymentApi.refreshStatus(paymentRequestId);
+      if (data.status === 'COMPLETED') {
+        setMpesaReceiptNumber(data.mpesaReceiptNumber ?? null);
+        setStep('success');
+      } else if (data.status === 'FAILED' || data.status === 'CANCELLED') {
+        const message = data.resultCode
+          ? getMpesaErrorMessage(data.resultCode)
+          : data.failureReason ?? data.message;
+        setErrorMessage(message ?? 'Payment failed');
+        setErrorResultCode(data.resultCode?.toString() ?? null);
+      } else {
+        // Still pending
+        setErrorMessage('Payment is still being processed. Please wait a moment and try again.');
+      }
+    } catch {
+      setErrorMessage('Unable to check payment status. Please try again or contact support.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Poll for payment status
   useEffect(() => {
@@ -133,6 +167,8 @@ export default function PaymentPage() {
     setErrorMessage(null);
     setErrorResultCode(null);
     setPollingCount(0);
+    setMpesaReceiptNumber(null);
+    setIsRefreshing(false);
   };
 
   // Step: Select Payment Type
@@ -473,7 +509,7 @@ export default function PaymentPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg bg-muted p-4">
+            <div className="rounded-lg bg-muted p-4 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Amount Paid</span>
                 <span className="font-bold">
@@ -484,7 +520,26 @@ export default function PaymentPage() {
                   )}
                 </span>
               </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Payment Type</span>
+                <span className="font-medium capitalize">{paymentType}</span>
+              </div>
+              {mpesaReceiptNumber && (
+                <div className="flex items-center justify-between border-t pt-2 mt-2">
+                  <span className="text-sm text-muted-foreground">M-Pesa Receipt</span>
+                  <span className="font-mono text-sm font-medium">{mpesaReceiptNumber}</span>
+                </div>
+              )}
             </div>
+
+            <div className="rounded-lg bg-green-50 p-3 text-left dark:bg-green-900/20">
+              <p className="text-sm text-green-700 dark:text-green-300">
+                {paymentType === 'deposit'
+                  ? '🎉 Your 1-month policy is now active!'
+                  : `✅ Daily payment recorded. ${daysCompleted + 1}/${PAYMENT_AMOUNTS.DAYS_REQUIRED} days completed.`}
+              </p>
+            </div>
+
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={resetPayment}>
                 Make Another Payment
@@ -502,46 +557,132 @@ export default function PaymentPage() {
   // Step: Failed
   if (step === 'failed') {
     const isTimeout = errorResultCode ? isMpesaTimeout(errorResultCode) : false;
+    const isCancelled = errorResultCode ? isMpesaCancelled(errorResultCode) : false;
+    const isUserError = errorResultCode ? isMpesaUserError(errorResultCode) : false;
+    const isRetryable = errorResultCode ? isMpesaRetryable(errorResultCode) : true;
+    const guidance = errorResultCode ? getMpesaErrorGuidance(errorResultCode) : null;
+
+    // Determine icon and colors based on error type
+    const getErrorStyle = () => {
+      if (isTimeout) {
+        return {
+          bgColor: 'bg-yellow-100 dark:bg-yellow-900',
+          icon: <AlertTriangle className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />,
+          title: 'Payment Timeout',
+        };
+      }
+      if (isCancelled) {
+        return {
+          bgColor: 'bg-gray-100 dark:bg-gray-800',
+          icon: <XCircle className="h-8 w-8 text-gray-600 dark:text-gray-400" />,
+          title: 'Payment Cancelled',
+        };
+      }
+      return {
+        bgColor: 'bg-red-100 dark:bg-red-900',
+        icon: <XCircle className="h-8 w-8 text-red-600 dark:text-red-400" />,
+        title: 'Payment Failed',
+      };
+    };
+
+    const errorStyle = getErrorStyle();
 
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Card className="w-full max-w-md text-center">
           <CardHeader>
-            <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
-              isTimeout ? 'bg-yellow-100 dark:bg-yellow-900' : 'bg-red-100 dark:bg-red-900'
-            }`}>
-              {isTimeout ? (
-                <AlertTriangle className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
-              ) : (
-                <XCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
-              )}
+            <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${errorStyle.bgColor}`}>
+              {errorStyle.icon}
             </div>
-            <CardTitle>{isTimeout ? 'Payment Timeout' : 'Payment Failed'}</CardTitle>
+            <CardTitle>{errorStyle.title}</CardTitle>
             <CardDescription>
               {errorMessage ?? 'Something went wrong with your payment'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* GAP-008: Show detailed guidance for timeout errors */}
-            {isTimeout && (
-              <div className="rounded-lg bg-yellow-50 p-4 text-left dark:bg-yellow-900/20">
-                <div className="flex items-center gap-2 font-medium text-yellow-800 dark:text-yellow-200">
+            {/* Show guidance based on error type */}
+            {guidance && (
+              <div className={`rounded-lg p-4 text-left ${
+                isTimeout
+                  ? 'bg-yellow-50 dark:bg-yellow-900/20'
+                  : isCancelled
+                  ? 'bg-gray-50 dark:bg-gray-800/50'
+                  : 'bg-red-50 dark:bg-red-900/20'
+              }`}>
+                <div className={`flex items-center gap-2 font-medium ${
+                  isTimeout
+                    ? 'text-yellow-800 dark:text-yellow-200'
+                    : isCancelled
+                    ? 'text-gray-700 dark:text-gray-300'
+                    : 'text-red-800 dark:text-red-200'
+                }`}>
                   <HelpCircle className="h-4 w-4" />
-                  What to do now:
+                  What to do:
                 </div>
-                <ol className="ml-6 mt-2 list-decimal space-y-1 text-sm text-yellow-700 dark:text-yellow-300">
+                <p className={`mt-2 text-sm ${
+                  isTimeout
+                    ? 'text-yellow-700 dark:text-yellow-300'
+                    : isCancelled
+                    ? 'text-gray-600 dark:text-gray-400'
+                    : 'text-red-700 dark:text-red-300'
+                }`}>
+                  {guidance}
+                </p>
+              </div>
+            )}
+
+            {/* Detailed timeout instructions */}
+            {isTimeout && (
+              <div className="rounded-lg bg-blue-50 p-4 text-left dark:bg-blue-900/20">
+                <div className="flex items-center gap-2 font-medium text-blue-800 dark:text-blue-200">
+                  <Smartphone className="h-4 w-4" />
+                  Check your payment status:
+                </div>
+                <ol className="ml-6 mt-2 list-decimal space-y-1 text-sm text-blue-700 dark:text-blue-300">
                   <li>Check your M-Pesa messages for confirmation</li>
-                  <li>Check your M-Pesa balance for any deduction</li>
-                  <li>If money was deducted, your payment may still be processing</li>
-                  <li>If not deducted, you can safely try again</li>
-                  <li>Contact support if issues persist</li>
+                  <li>Look for any balance deduction</li>
+                  <li>Use the button below to verify with M-Pesa</li>
                 </ol>
               </div>
             )}
 
-            <Button className="w-full" onClick={resetPayment}>
-              Try Again
-            </Button>
+            {/* Check Status button for timeout scenarios */}
+            {isTimeout && paymentRequestId && (
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={handleRefreshStatus}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Checking with M-Pesa...
+                  </>
+                ) : (
+                  <>
+                    <Phone className="mr-2 h-4 w-4" />
+                    Check Payment Status
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* Action buttons */}
+            {isRetryable && (
+              <Button className="w-full" onClick={resetPayment}>
+                {isCancelled ? 'Try Again' : 'Retry Payment'}
+              </Button>
+            )}
+
+            {!isRetryable && !isUserError && (
+              <div className="rounded-lg bg-gray-50 p-3 text-center dark:bg-gray-800">
+                <p className="text-sm text-muted-foreground">
+                  If this issue persists, please contact support.
+                </p>
+              </div>
+            )}
+
             <Button variant="outline" className="w-full" onClick={() => navigate('/my/wallet')}>
               Back to Wallet
             </Button>
