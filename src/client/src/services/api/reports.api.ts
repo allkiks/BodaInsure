@@ -1,6 +1,12 @@
 import { apiClient } from './client';
 import { API_ENDPOINTS } from '@/config/constants';
-import type { ReportDefinition, GeneratedReport, PaginatedResponse, ReportFormat } from '@/types';
+import type {
+  ReportDefinition,
+  GeneratedReport,
+  PaginatedResponse,
+  ReportFormat,
+  CashFlowReportMetadata,
+} from '@/types';
 
 interface GenerateReportParams {
   definitionId: string;
@@ -8,6 +14,13 @@ interface GenerateReportParams {
   endDate: string;
   format: ReportFormat;
   filters?: Record<string, string>;
+}
+
+interface ReportDataResponse {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  totalCount: number;
+  metadata?: CashFlowReportMetadata;
 }
 
 export const reportsApi = {
@@ -85,5 +98,15 @@ export const reportsApi = {
       { responseType: 'blob' }
     );
     return response.data;
+  },
+
+  /**
+   * Get report data (for preview/viewing)
+   */
+  getReportData: async (id: string): Promise<ReportDataResponse> => {
+    const response = await apiClient.get<{ data: ReportDataResponse }>(
+      `${API_ENDPOINTS.REPORTS}/${id}/data`
+    );
+    return response.data.data;
   },
 };

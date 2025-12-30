@@ -9,6 +9,7 @@ import {
   XCircle,
   Loader2,
   Info,
+  Eye,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,7 +36,8 @@ import {
 import { reportsApi } from '@/services/api/reports.api';
 import { toast } from '@/hooks/use-toast';
 import { formatDateTime } from '@/lib/utils';
-import type { ReportFormat } from '@/types';
+import type { ReportFormat, CashFlowReportMetadata } from '@/types';
+import { CashFlowReportView } from './components/CashFlowReportView';
 
 const statusColors: Record<string, string> = {
   PENDING: 'bg-yellow-100 text-yellow-800',
@@ -67,6 +69,12 @@ export default function ReportListPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [format, setFormat] = useState<ReportFormat>('CSV');
+
+  // Preview dialog state
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [previewReportId, setPreviewReportId] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<CashFlowReportMetadata | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
   const { data: definitions } = useQuery({
     queryKey: ['reports', 'definitions'],
@@ -160,6 +168,51 @@ export default function ReportListPage() {
       return;
     }
     generateMutation.mutate();
+  };
+
+  // Handle preview/view report
+  const handlePreview = async (reportId: string, reportName: string) => {
+    // Only show preview for cash flow reports
+    const isCashFlowReport = reportName.toLowerCase().includes('cash flow');
+    if (!isCashFlowReport) {
+      toast({
+        title: 'Preview not available',
+        description: 'Preview is only available for Statement of Cash Flows reports.',
+      });
+      return;
+    }
+
+    setPreviewReportId(reportId);
+    setIsLoadingPreview(true);
+    setPreviewDialogOpen(true);
+
+    try {
+      const data = await reportsApi.getReportData(reportId);
+      if (data.metadata?.isCashFlowReport) {
+        setPreviewData(data.metadata);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Preview error',
+          description: 'This report does not support preview.',
+        });
+        setPreviewDialogOpen(false);
+      }
+    } catch {
+      toast({
+        variant: 'destructive',
+        title: 'Failed',
+        description: 'Failed to load report preview.',
+      });
+      setPreviewDialogOpen(false);
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  // Check if a report is a cash flow report
+  const isCashFlowReport = (reportName: string): boolean => {
+    return reportName.toLowerCase().includes('cash flow');
   };
 
   return (
@@ -366,14 +419,26 @@ export default function ReportListPage() {
                       {report.status}
                     </Badge>
                     {report.status === 'COMPLETED' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDownload(report)}
-                      >
-                        <Download className="mr-2 h-4 w-4" />
-                        Download
-                      </Button>
+                      <div className="flex gap-2">
+                        {isCashFlowReport(report.name) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePreview(report.id, report.name)}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            View
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDownload(report)}
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Download
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -386,6 +451,46 @@ export default function ReportListPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Cash Flow Report Preview Dialog */}
+      <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Report Preview</DialogTitle>
+            <DialogDescription>
+              Statement of Cash Flows - View and print
+            </DialogDescription>
+          </DialogHeader>
+          {isLoadingPreview ? (
+            <div className="flex h-64 items-center justify-center">
+              <LoadingSpinner size="lg" />
+            </div>
+          ) : previewData ? (
+            <CashFlowReportView
+              reportTitle={previewData.reportTitle}
+              organizationName={previewData.organizationName}
+              currentPeriod={previewData.currentPeriod}
+              priorPeriod={previewData.priorPeriod}
+              lineItems={previewData.lineItems}
+            />
+          ) : (
+            <div className="flex h-64 items-center justify-center text-muted-foreground">
+              No preview data available
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewDialogOpen(false)}>
+              Close
+            </Button>
+            <Button
+              onClick={() => window.print()}
+              className="print:hidden"
+            >
+              Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

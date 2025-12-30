@@ -11,6 +11,7 @@ import { DashboardService } from './services/dashboard.service.js';
 import { ReportService } from './services/report.service.js';
 import { ExportService } from './services/export.service.js';
 import { ScheduledReportService } from './services/scheduled-report.service.js';
+import { CashFlowReportService } from './services/cash-flow-report.service.js';
 
 // Controllers
 import { DashboardController } from './controllers/dashboard.controller.js';
@@ -40,12 +41,14 @@ import { NotificationModule } from '../notification/notification.module.js';
     ReportService,
     ExportService,
     ScheduledReportService,
+    CashFlowReportService,
   ],
   exports: [
     DashboardService,
     ReportService,
     ExportService,
     ScheduledReportService,
+    CashFlowReportService,
   ],
 })
 export class ReportingModule {}

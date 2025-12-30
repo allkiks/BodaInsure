@@ -402,6 +402,45 @@ export interface GeneratedReport {
   createdAt: string;
 }
 
+// Cash Flow Report types
+export interface CashFlowLineItem {
+  id: string;
+  label: string;
+  indent: number;
+  isTotal: boolean;
+  isBold: boolean;
+  currentPeriod: number | null;
+  priorPeriod: number | null;
+  variance: number | null;
+}
+
+export interface CashFlowPeriod {
+  startDate: string;
+  endDate: string;
+}
+
+export interface CashFlowReportData {
+  reportTitle: string;
+  organizationName: string;
+  currentPeriod: CashFlowPeriod;
+  priorPeriod: CashFlowPeriod;
+  lineItems: CashFlowLineItem[];
+  metadata?: {
+    generatedAt: string;
+    generatedBy?: string;
+    organizationId?: string;
+  };
+}
+
+export interface CashFlowReportMetadata {
+  reportTitle: string;
+  organizationName: string;
+  currentPeriod: CashFlowPeriod;
+  priorPeriod: CashFlowPeriod;
+  lineItems: CashFlowLineItem[];
+  isCashFlowReport: boolean;
+}
+
 // API response types
 export interface ApiResponse<T> {
   data: T;

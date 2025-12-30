@@ -66,7 +66,8 @@
       "Bash(timeout 10 docker logs:*)",
       "Bash(D:/repos/BODAINSURE/src/client/node_modules/.bin/tsc:*)",
       "Bash(docker rm:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(D:/repos/BODAINSURE/src/server/node_modules/.bin/tsc:*)"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { DataSource } from 'typeorm';
@@ -13,6 +13,7 @@ import {
   ReportStatus,
 } from '../entities/generated-report.entity.js';
 import { EncryptionService } from '../../../common/services/encryption.service.js';
+import { CashFlowReportService } from './cash-flow-report.service.js';
 
 /**
  * Create report definition request
@@ -66,6 +67,8 @@ export class ReportService {
     private readonly reportRepository: Repository<GeneratedReport>,
     private readonly dataSource: DataSource,
     private readonly encryptionService: EncryptionService,
+    @Inject(forwardRef(() => CashFlowReportService))
+    private readonly cashFlowReportService: CashFlowReportService,
   ) {}
 
   /**
@@ -258,9 +261,17 @@ export class ReportService {
       case ReportType.ORGANIZATION:
         return this.generateOrganizationReport(report);
       case ReportType.FINANCIAL:
+        // Check if this is a cash flow report
+        if (definition.name === 'Statement of Cash Flows' ||
+            (report.parameters as Record<string, unknown>)?.reportStyle === 'CASH_FLOW') {
+          return this.generateCashFlowStyleReport(report);
+        }
         return this.generateFinancialReport(report);
       case ReportType.CUSTOM:
         // Handle custom reports based on the report name
+        if (definition.name.toLowerCase().includes('cash flow')) {
+          return this.generateCashFlowStyleReport(report);
+        }
         if (definition.name.toLowerCase().includes('financial')) {
           return this.generateFinancialReport(report);
         }
@@ -622,6 +633,42 @@ export class ReportService {
   }
 
   /**
+   * Generate cash flow style report
+   * Delegates to CashFlowReportService and transforms to ReportData format
+   */
+  private async generateCashFlowStyleReport(report: GeneratedReport): Promise<ReportData> {
+    if (!report.startDate || !report.endDate) {
+      throw new BadRequestException('Start and end dates are required for cash flow reports');
+    }
+
+    // Generate cash flow report using dedicated service
+    const cashFlowData = await this.cashFlowReportService.generateCashFlowReport({
+      startDate: new Date(report.startDate),
+      endDate: new Date(report.endDate),
+      organizationId: report.organizationId,
+      includePriorPeriod: true,
+    });
+
+    // Transform to flat rows for standard export format
+    const { columns, rows } = this.cashFlowReportService.transformToFlatRows(cashFlowData);
+
+    return {
+      columns,
+      rows,
+      totalCount: rows.length,
+      metadata: {
+        reportTitle: cashFlowData.reportTitle,
+        organizationName: cashFlowData.organizationName,
+        currentPeriod: cashFlowData.currentPeriod,
+        priorPeriod: cashFlowData.priorPeriod,
+        // Include full line items for structured rendering
+        lineItems: cashFlowData.lineItems,
+        isCashFlowReport: true,
+      },
+    };
+  }
+
+  /**
    * Get generated report by ID
    */
   async getReportById(id: string): Promise<GeneratedReport> {
@@ -729,6 +776,14 @@ export class ReportService {
         defaultFormat: ReportFormat.EXCEL,
         availableFormats: [ReportFormat.JSON, ReportFormat.CSV, ReportFormat.EXCEL],
         frequency: ReportFrequency.DAILY,
+      },
+      {
+        name: 'Statement of Cash Flows',
+        type: ReportType.FINANCIAL,
+        description: 'Cash flow statement showing receipts, disbursements, and balance changes',
+        defaultFormat: ReportFormat.EXCEL,
+        availableFormats: [ReportFormat.JSON, ReportFormat.CSV, ReportFormat.EXCEL],
+        frequency: ReportFrequency.MONTHLY,
       },
     ];
 

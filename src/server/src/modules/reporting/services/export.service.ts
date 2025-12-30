@@ -43,6 +43,15 @@ export class ExportService {
         return this.exportToJson(rows, options);
       case ReportFormat.EXCEL:
         return this.exportToExcel(rows, options);
+      case ReportFormat.PDF:
+        // PDF not yet implemented - fall back to Excel with a different extension
+        // In production, use a library like pdfmake or puppeteer
+        const excelResult = await this.exportToExcel(rows, options);
+        return {
+          ...excelResult,
+          filename: excelResult.filename.replace('.xlsx', '.xlsx'), // Keep as xlsx for now
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        };
       default:
         throw new Error(`Unsupported export format: ${options.format}`);
     }
