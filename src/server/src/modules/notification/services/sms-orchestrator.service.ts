@@ -23,6 +23,20 @@ export interface SmsSendOptions {
 }
 
 /**
+ * SMS Metrics for observability
+ */
+interface SmsMetrics {
+  totalSent: number;
+  totalFailed: number;
+  totalRetries: number;
+  totalFailovers: number;
+  byProvider: Record<string, { sent: number; failed: number }>;
+  byErrorType: Record<string, number>;
+  avgResponseTimeMs: number;
+  lastResetAt: Date;
+}
+
+/**
  * SMS Orchestrator Service
  * Manages SMS sending with provider failover and retry logic
  *
@@ -47,6 +61,19 @@ export class SmsOrchestratorService implements OnModuleInit {
   // Track provider health for smart routing
   private providerHealth: Map<string, { healthy: boolean; lastCheck: Date }> =
     new Map();
+
+  // Metrics for observability
+  private metrics: SmsMetrics = {
+    totalSent: 0,
+    totalFailed: 0,
+    totalRetries: 0,
+    totalFailovers: 0,
+    byProvider: {},
+    byErrorType: {},
+    avgResponseTimeMs: 0,
+    lastResetAt: new Date(),
+  };
+  private responseTimes: number[] = [];
 
   constructor(
     private readonly configService: ConfigService,
@@ -126,6 +153,9 @@ export class SmsOrchestratorService implements OnModuleInit {
       [provider, fallback] = [fallback, provider];
     }
 
+    // Track timing
+    const startTime = Date.now();
+
     // Try primary provider with retries
     let result = await this.sendWithRetry(provider, request, maxRetries);
 
@@ -135,7 +165,16 @@ export class SmsOrchestratorService implements OnModuleInit {
         `Primary provider ${provider.name} failed, trying ${fallback.name}`,
       );
       this.markProviderUnhealthy(provider.name);
+      this.trackFailover();
       result = await this.sendWithRetry(fallback, request, maxRetries);
+    }
+
+    // Track metrics
+    const responseTime = Date.now() - startTime;
+    if (result.success) {
+      this.trackSuccess(result.provider, responseTime);
+    } else {
+      this.trackFailure(result.provider, result.error);
     }
 
     // Log audit event
@@ -270,6 +309,7 @@ export class SmsOrchestratorService implements OnModuleInit {
         this.logger.debug(
           `Retry attempt ${attempt}/${maxRetries} for ${maskPhone(request.to)} after ${delay}ms`,
         );
+        this.trackRetry();
         await this.delay(delay);
       }
 
@@ -303,23 +343,79 @@ export class SmsOrchestratorService implements OnModuleInit {
 
   /**
    * Check if error is retryable
+   * Enhanced to handle AT-specific error codes and HTTP error codes
    */
   private isRetryableError(error?: string): boolean {
     if (!error) return true;
 
-    // Non-retryable errors
+    const errorLower = error.toLowerCase();
+
+    // Non-retryable errors - permanent failures that should not be retried
     const nonRetryable = [
-      'Invalid phone number',
-      'InvalidPhoneNumber',
-      'Invalid sender',
-      'InvalidSenderId',
-      'Blocked',
-      'Blacklisted',
+      // Phone number issues
+      'invalid phone number',
+      'invalidphonenumber',
+      'unsupportednumbertype',
+      // Sender ID issues
+      'invalid sender',
+      'invalidsenderid',
+      // Blacklist issues
+      'blocked',
+      'blacklisted',
+      'userinblacklist',
+      // Gateway rejections
+      'rejectedbygateway',
+      'rejected',
+      // Auth issues (non-retryable, needs credential fix)
+      'authentication failed',
+      'invalid api credentials',
+      'unauthorized',
     ];
 
-    return !nonRetryable.some((e) =>
-      error.toLowerCase().includes(e.toLowerCase()),
-    );
+    // Retryable errors - transient failures that may succeed on retry
+    const retryable = [
+      // Network/timeout issues
+      'timeout',
+      'network error',
+      'connection reset',
+      'econnrefused',
+      'enotfound',
+      'etimedout',
+      // Server errors
+      'internal server error',
+      'gateway error',
+      '500',
+      '502',
+      '503',
+      '504',
+      // Rate limiting (can succeed after delay)
+      'rate limit',
+      '429',
+      // Time conflicts (AT-specific, per docs)
+      'time conflict',
+      '409',
+      // Transient carrier issues
+      'could not route',
+      'couldnotroute',
+      'risk hold',
+      'riskhold',
+      // Balance issues (may be topped up)
+      'insufficient balance',
+      'insufficientbalance',
+    ];
+
+    // If it matches a non-retryable pattern, don't retry
+    if (nonRetryable.some((e) => errorLower.includes(e))) {
+      return false;
+    }
+
+    // If it matches a retryable pattern, do retry
+    if (retryable.some((e) => errorLower.includes(e))) {
+      return true;
+    }
+
+    // Default: retry unknown errors (fail-safe approach)
+    return true;
   }
 
   /**
@@ -397,6 +493,124 @@ export class SmsOrchestratorService implements OnModuleInit {
    */
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Track successful send metric
+   */
+  private trackSuccess(provider: string, responseTimeMs: number): void {
+    this.metrics.totalSent++;
+    if (!this.metrics.byProvider[provider]) {
+      this.metrics.byProvider[provider] = { sent: 0, failed: 0 };
+    }
+    this.metrics.byProvider[provider]!.sent++;
+
+    // Track response time (keep last 100 samples)
+    this.responseTimes.push(responseTimeMs);
+    if (this.responseTimes.length > 100) {
+      this.responseTimes.shift();
+    }
+    this.metrics.avgResponseTimeMs =
+      this.responseTimes.reduce((a, b) => a + b, 0) / this.responseTimes.length;
+  }
+
+  /**
+   * Track failed send metric
+   */
+  private trackFailure(provider: string, error?: string): void {
+    this.metrics.totalFailed++;
+    if (!this.metrics.byProvider[provider]) {
+      this.metrics.byProvider[provider] = { sent: 0, failed: 0 };
+    }
+    this.metrics.byProvider[provider]!.failed++;
+
+    // Track error types
+    const errorType = this.categorizeErrorType(error);
+    this.metrics.byErrorType[errorType] =
+      (this.metrics.byErrorType[errorType] ?? 0) + 1;
+  }
+
+  /**
+   * Track retry attempt
+   */
+  private trackRetry(): void {
+    this.metrics.totalRetries++;
+  }
+
+  /**
+   * Track failover event
+   */
+  private trackFailover(): void {
+    this.metrics.totalFailovers++;
+  }
+
+  /**
+   * Categorize error for metrics
+   */
+  private categorizeErrorType(error?: string): string {
+    if (!error) return 'unknown';
+
+    const errorLower = error.toLowerCase();
+
+    if (errorLower.includes('timeout') || errorLower.includes('etimedout')) {
+      return 'timeout';
+    }
+    if (errorLower.includes('network') || errorLower.includes('econnrefused')) {
+      return 'network';
+    }
+    if (errorLower.includes('invalid phone')) {
+      return 'invalid_phone';
+    }
+    if (errorLower.includes('balance')) {
+      return 'insufficient_balance';
+    }
+    if (errorLower.includes('blacklist')) {
+      return 'blacklisted';
+    }
+    if (errorLower.includes('rate limit') || errorLower.includes('429')) {
+      return 'rate_limited';
+    }
+    if (errorLower.includes('auth') || errorLower.includes('401')) {
+      return 'auth_error';
+    }
+
+    return 'other';
+  }
+
+  /**
+   * Get current metrics for monitoring
+   * Can be exposed via a health/metrics endpoint
+   */
+  getMetrics(): SmsMetrics & { successRate: number; uptimeMinutes: number } {
+    const total = this.metrics.totalSent + this.metrics.totalFailed;
+    const successRate = total > 0 ? (this.metrics.totalSent / total) * 100 : 100;
+    const uptimeMinutes = Math.floor(
+      (Date.now() - this.metrics.lastResetAt.getTime()) / 60000,
+    );
+
+    return {
+      ...this.metrics,
+      successRate: Math.round(successRate * 100) / 100,
+      uptimeMinutes,
+    };
+  }
+
+  /**
+   * Reset metrics (e.g., for new monitoring period)
+   */
+  resetMetrics(): void {
+    this.metrics = {
+      totalSent: 0,
+      totalFailed: 0,
+      totalRetries: 0,
+      totalFailovers: 0,
+      byProvider: {},
+      byErrorType: {},
+      avgResponseTimeMs: 0,
+      lastResetAt: new Date(),
+    };
+    this.responseTimes = [];
+    this.logger.log('SMS metrics reset');
   }
 
   /**

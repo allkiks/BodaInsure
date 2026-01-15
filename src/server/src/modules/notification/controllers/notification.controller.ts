@@ -16,6 +16,7 @@ import {
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../../identity/decorators/current-user.decorator.js';
 import { NotificationService } from '../services/notification.service.js';
+import { SmsDeliveryReportService } from '../services/sms-delivery-report.service.js';
 import { UpdatePreferencesDto } from '../dto/update-preferences.dto.js';
 import { NotificationQueryDto } from '../dto/notification-query.dto.js';
 import type { NotificationChannel } from '../entities/notification.entity.js';
@@ -297,29 +298,89 @@ export class NotificationController {
 /**
  * Notification Webhook Controller
  * Handles callbacks from SMS/WhatsApp providers
+ *
+ * Per Africa's Talking best practices:
+ * - Process delivery reports (Success, Failed, Rejected, Buffered)
+ * - Store delivery status for auditing
+ * - Handle provider-specific callback formats
  */
 @ApiTags('Notification Webhooks')
 @Controller('notifications/webhooks')
 export class NotificationWebhookController {
+  constructor(
+    private readonly deliveryReportService: SmsDeliveryReportService,
+  ) {}
+
   /**
    * SMS delivery callback (Africa's Talking)
+   * AT sends POST requests with delivery status updates
+   *
+   * Per AT documentation, callback includes:
+   * - id: Message ID (ATXid_xxx)
+   * - status: Delivery status (Success, Failed, Rejected, Buffered, Sent, Submitted)
+   * - phoneNumber: Recipient phone number
+   * - networkCode: Carrier network code (63902=Safaricom, 63903=Airtel, etc.)
+   * - failureReason: Reason for failure (if applicable)
+   * - retryCount: Number of retry attempts
    */
   @Post('sms/delivery')
   @ApiOperation({
-    summary: 'SMS delivery callback',
-    description: 'Webhook for SMS delivery status updates',
+    summary: 'SMS delivery callback (Africa\'s Talking)',
+    description: 'Webhook for Africa\'s Talking SMS delivery status updates',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Delivery report processed successfully',
   })
   async smsDeliveryCallback(
-    @Body() _body: {
+    @Body() body: {
       id: string;
       status: string;
       phoneNumber: string;
+      networkCode?: string;
+      failureReason?: string;
+      retryCount?: string;
+    },
+  ): Promise<{ success: boolean; reportId?: string }> {
+    try {
+      const report = await this.deliveryReportService.processATCallback(body);
+      return { success: true, reportId: report.id };
+    } catch (error) {
+      // Log error but return success to prevent AT from retrying
+      // The callback should be acknowledged even if processing fails
+      console.error('Failed to process AT delivery callback:', error);
+      return { success: true };
+    }
+  }
+
+  /**
+   * SMS delivery callback (Advantasms)
+   */
+  @Post('sms/delivery/advantasms')
+  @ApiOperation({
+    summary: 'SMS delivery callback (Advantasms)',
+    description: 'Webhook for Advantasms SMS delivery status updates',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Delivery report processed successfully',
+  })
+  async advantasmsDeliveryCallback(
+    @Body() body: {
+      messageID: string;
+      status: string;
+      mobile: string;
+      deliveryTime?: string;
       failureReason?: string;
     },
-  ): Promise<{ success: boolean }> {
-    // Process delivery status update
-    // This would update the notification status in the database
-    return { success: true };
+  ): Promise<{ success: boolean; reportId?: string }> {
+    try {
+      const report = await this.deliveryReportService.processAdvantasmsCallback(body);
+      return { success: true, reportId: report.id };
+    } catch (error) {
+      console.error('Failed to process Advantasms delivery callback:', error);
+      return { success: true };
+    }
   }
 
   /**

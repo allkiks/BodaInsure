@@ -7,6 +7,7 @@ import { HttpModule } from '@nestjs/axios';
 import { Notification } from './entities/notification.entity.js';
 import { NotificationTemplate } from './entities/notification-template.entity.js';
 import { NotificationPreference } from './entities/notification-preference.entity.js';
+import { SmsDeliveryReport } from './entities/sms-delivery-report.entity.js';
 
 // External entities for ReminderCoordinatorService
 import { Wallet } from '../payment/entities/wallet.entity.js';
@@ -16,6 +17,7 @@ import { Policy } from '../policy/entities/policy.entity.js';
 // Services
 import { SmsService } from './services/sms.service.js';
 import { SmsOrchestratorService } from './services/sms-orchestrator.service.js';
+import { SmsDeliveryReportService } from './services/sms-delivery-report.service.js';
 import { WhatsAppService } from './services/whatsapp.service.js';
 import { EmailService } from './services/email.service.js';
 import { NotificationService } from './services/notification.service.js';
@@ -52,6 +54,7 @@ import {
       Notification,
       NotificationTemplate,
       NotificationPreference,
+      SmsDeliveryReport,
       // External entities for ReminderCoordinatorService
       Wallet,
       User,
@@ -76,6 +79,7 @@ import {
     // SMS Services
     SmsService,
     SmsOrchestratorService,
+    SmsDeliveryReportService,
     // Other Services
     WhatsAppService,
     EmailService,
@@ -90,6 +94,7 @@ import {
     ReminderCoordinatorService,
     SmsService,
     SmsOrchestratorService,
+    SmsDeliveryReportService,
     WhatsAppService,
     EmailService,
     // Export providers for direct use if needed
