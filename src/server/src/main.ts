@@ -66,6 +66,11 @@ async function bootstrap() {
       .addTag('organizations', 'Organization management')
       .addTag('notifications', 'Notification management')
       .addTag('reports', 'Reporting and analytics')
+      .addTag('Accounting - GL', 'Chart of Accounts and General Ledger')
+      .addTag('Accounting - Settlements', 'Partner settlement management')
+      .addTag('Accounting - Reconciliation', 'Bank reconciliation')
+      .addTag('Accounting - Reports', 'Financial reports')
+      .addTag('Accounting - Export', 'Data export to CSV/Excel')
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);

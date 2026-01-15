@@ -48,6 +48,7 @@ async function runSeeds(): Promise<void> {
     logger.log(`║  Users seeded:         ${String(result.usersSeeded).padEnd(37)}║`);
     logger.log(`║  Organizations seeded: ${String(result.organizationsSeeded).padEnd(37)}║`);
     logger.log(`║  Policy terms seeded:  ${String(result.policyTermsSeeded).padEnd(37)}║`);
+    logger.log(`║  GL accounts seeded:   ${String(result.glAccountsSeeded).padEnd(37)}║`);
     logger.log(`║  Test policies seeded: ${String(result.testPoliciesSeeded).padEnd(37)}║`);
     logger.log(`║  Duration:             ${result.durationMs}ms${' '.repeat(Math.max(0, 34 - String(result.durationMs).length))}║`);
     logger.log('╠══════════════════════════════════════════════════════════════╣');

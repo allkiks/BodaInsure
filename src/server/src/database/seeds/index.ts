@@ -55,3 +55,11 @@ export {
   type TestPolicyMetadata,
   type TestPolicySeedData,
 } from './test-policies.seed.js';
+
+// Chart of Accounts seed data
+export {
+  CHART_OF_ACCOUNTS,
+  CHART_OF_ACCOUNTS_SUMMARY,
+  getNormalBalanceForType,
+  type GlAccountSeedConfig,
+} from './chart-of-accounts.seed.js';

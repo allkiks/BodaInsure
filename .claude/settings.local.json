@@ -67,7 +67,17 @@
       "Bash(D:/repos/BODAINSURE/src/client/node_modules/.bin/tsc:*)",
       "Bash(docker rm:*)",
       "Bash(grep:*)",
-      "Bash(D:/repos/BODAINSURE/src/server/node_modules/.bin/tsc:*)"
+      "Bash(D:/repos/BODAINSURE/src/server/node_modules/.bin/tsc:*)",
+      "Bash(netstat:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(docker port:*)",
+      "Bash(docker inspect:*)",
+      "Bash(set:*)",
+      "Bash(npx vite:*)",
+      "Bash(docker-compose:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2NDE5YWFhYS1kZGUxLTQ3MDgtYTI4YS0yNDMxNGRlMGViZTAiLCJwaG9uZSI6IisyNTQwMDAwMDAwMDAiLCJyb2xlIjoicGxhdGZvcm1fYWRtaW4iLCJvcmdhbml6YXRpb25JZCI6bnVsbCwiaWF0IjoxNzY4NDYyNTYxLCJleHAiOjE3NzEwNTQ1NjF9.7rBmDxw1YcIH2q5qP2pYCZMo9TQToABQaQYyhd2DHKs\")",
+      "Bash(ls:*)"
     ]
   }
 }

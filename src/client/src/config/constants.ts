@@ -98,6 +98,17 @@ export const API_ENDPOINTS = {
   REPORT_DEFINITIONS: '/reports/definitions',
   REPORT_GENERATE: '/reports/generate',
 
+  // Accounting
+  ACCOUNTING_GL_ACCOUNTS: '/accounting/gl-accounts',
+  ACCOUNTING_TRIAL_BALANCE: '/accounting/trial-balance',
+  ACCOUNTING_SETTLEMENTS: '/accounting/settlements',
+  ACCOUNTING_SETTLEMENTS_PENDING: '/accounting/settlements/pending',
+  ACCOUNTING_RECONCILIATIONS: '/accounting/reconciliation',
+  ACCOUNTING_REPORTS_DASHBOARD: '/accounting/reports/dashboard',
+  ACCOUNTING_REPORTS_BALANCE_SHEET: '/accounting/reports/balance-sheet',
+  ACCOUNTING_REPORTS_INCOME_STATEMENT: '/accounting/reports/income-statement',
+  ACCOUNTING_REPORTS_PARTNER_STATEMENT: '/accounting/reports/partner-statement',
+
   // Settings
   SETTINGS: '/settings',
 } as const;

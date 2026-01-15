@@ -13,6 +13,10 @@ import {
 } from '../policy/entities/policy-terms.entity.js';
 import { User, UserRole, UserStatus, KycStatus } from '../identity/entities/user.entity.js';
 import {
+  GlAccount,
+  GlAccountStatus,
+} from '../accounting/entities/gl-account.entity.js';
+import {
   // Organizations seed data
   KBA_CONFIG,
   SACCO_SEEDS,
@@ -22,6 +26,10 @@ import {
   // Users seed data (for phone numbers)
   SEEDED_PHONES,
   ADDITIONAL_RIDERS,
+  // Chart of Accounts seed data
+  CHART_OF_ACCOUNTS,
+  CHART_OF_ACCOUNTS_SUMMARY,
+  getNormalBalanceForType,
 } from '../../database/seeds/index.js';
 
 /**
@@ -33,6 +41,7 @@ export interface DataSeedingResult {
   policyTermsSeeded: number;
   testPoliciesSeeded: number;
   usersMapped: number;
+  glAccountsSeeded: number;
   error?: string;
 }
 
@@ -63,6 +72,8 @@ export class DataSeederService {
     private readonly policyTermsRepository: Repository<PolicyTerms>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(GlAccount)
+    private readonly glAccountRepository: Repository<GlAccount>,
   ) {}
 
   /**
@@ -76,6 +87,7 @@ export class DataSeederService {
     let policyTermsSeeded = 0;
     let testPoliciesSeeded = 0;
     let usersMapped = 0;
+    let glAccountsSeeded = 0;
 
     try {
       // Seed organizations
@@ -89,6 +101,10 @@ export class DataSeederService {
       // Map users to organizations
       const mappingResult = await this.mapUsersToOrganizations();
       usersMapped = mappingResult;
+
+      // Seed Chart of Accounts (GL accounts)
+      const glResult = await this.seedChartOfAccounts();
+      glAccountsSeeded = glResult;
 
       // NOTE: Test policies are NOT seeded because:
       // - Riders start with PENDING KYC status
@@ -105,6 +121,7 @@ export class DataSeederService {
         policyTermsSeeded,
         testPoliciesSeeded,
         usersMapped,
+        glAccountsSeeded,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -115,6 +132,7 @@ export class DataSeederService {
         policyTermsSeeded,
         testPoliciesSeeded,
         usersMapped,
+        glAccountsSeeded,
         error: errorMessage,
       };
     }
@@ -236,6 +254,67 @@ export class DataSeederService {
     this.logger.log(`Seeded TPO policy terms v${TPO_POLICY_TERMS_SEED.version}`);
 
     return 1;
+  }
+
+  /**
+   * Seed Chart of Accounts (GL accounts)
+   * Idempotent - skips if accounts already exist
+   * @returns Number of GL accounts seeded
+   */
+  private async seedChartOfAccounts(): Promise<number> {
+    // Check if accounts already exist by looking for the first account
+    const existingAccount = await this.glAccountRepository.findOne({
+      where: { accountCode: '1001' },
+    });
+
+    if (existingAccount) {
+      this.logger.log('Chart of Accounts already seeded, skipping...');
+      return 0;
+    }
+
+    this.logger.log('Seeding Chart of Accounts...');
+
+    let seededCount = 0;
+    for (const accountConfig of CHART_OF_ACCOUNTS) {
+      const normalBalance = getNormalBalanceForType(accountConfig.type);
+
+      const account = this.glAccountRepository.create({
+        accountCode: accountConfig.code,
+        accountName: accountConfig.name,
+        accountType: accountConfig.type,
+        description: accountConfig.description,
+        normalBalance,
+        status: GlAccountStatus.ACTIVE,
+        isSystemAccount: true,
+        balance: 0,
+      });
+
+      await this.glAccountRepository.save(account);
+      seededCount++;
+    }
+
+    this.logger.log(`Seeded ${seededCount} GL accounts`);
+    this.displayChartOfAccountsSummary();
+
+    return seededCount;
+  }
+
+  /**
+   * Display Chart of Accounts seeding summary
+   */
+  private displayChartOfAccountsSummary(): void {
+    this.logger.log('');
+    this.logger.log('╔══════════════════════════════════════════════════════════════╗');
+    this.logger.log('║              CHART OF ACCOUNTS SUMMARY                        ║');
+    this.logger.log('╠══════════════════════════════════════════════════════════════╣');
+    this.logger.log(`║  Asset Accounts:     ${String(CHART_OF_ACCOUNTS_SUMMARY.assetAccounts).padEnd(38)}║`);
+    this.logger.log(`║  Liability Accounts: ${String(CHART_OF_ACCOUNTS_SUMMARY.liabilityAccounts).padEnd(38)}║`);
+    this.logger.log(`║  Income Accounts:    ${String(CHART_OF_ACCOUNTS_SUMMARY.incomeAccounts).padEnd(38)}║`);
+    this.logger.log(`║  Expense Accounts:   ${String(CHART_OF_ACCOUNTS_SUMMARY.expenseAccounts).padEnd(38)}║`);
+    this.logger.log('╠══════════════════════════════════════════════════════════════╣');
+    this.logger.log(`║  Total GL Accounts:  ${String(CHART_OF_ACCOUNTS_SUMMARY.totalAccounts).padEnd(38)}║`);
+    this.logger.log('╚══════════════════════════════════════════════════════════════╝');
+    this.logger.log('');
   }
 
   /**

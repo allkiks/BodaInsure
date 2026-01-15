@@ -543,3 +543,236 @@ export interface AdminLoginResponse {
   };
   lockedUntil?: string;
 }
+
+// Accounting types
+export type GlAccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
+export type GlAccountStatus = 'ACTIVE' | 'INACTIVE' | 'CLOSED';
+export type NormalBalance = 'DEBIT' | 'CREDIT';
+
+export interface GlAccount {
+  id: string;
+  accountCode: string;
+  accountName: string;
+  accountType: GlAccountType;
+  normalBalance: NormalBalance;
+  description?: string;
+  parentAccountId?: string;
+  isSystemAccount: boolean;
+  status: GlAccountStatus;
+  balance: number;
+  balanceInKes?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrialBalanceAccount {
+  id: string;
+  accountCode: string;
+  accountName: string;
+  accountType: GlAccountType;
+  normalBalance: NormalBalance;
+  balance: number;
+  debitBalance: number;
+  creditBalance: number;
+}
+
+export interface TrialBalance {
+  accounts: TrialBalanceAccount[];
+  totalDebits: number;
+  totalCredits: number;
+  totalDebitsKes?: number;
+  totalCreditsKes?: number;
+  isBalanced: boolean;
+  asOf?: string;
+  asOfDate?: string; // Legacy support
+}
+
+export type PartnerType = 'KBA' | 'ROBS_INSURANCE' | 'DEFINITE_ASSURANCE' | 'ATRONACH';
+export type SettlementType = 'SERVICE_FEE' | 'COMMISSION' | 'PREMIUM_REMITTANCE' | 'REFUND';
+export type SettlementStatus = 'PENDING' | 'APPROVED' | 'COMPLETED' | 'CANCELLED' | 'REJECTED';
+
+export interface PartnerSettlement {
+  id: string;
+  settlementNumber: string;
+  partnerType: PartnerType;
+  settlementType: SettlementType;
+  periodStart: string;
+  periodEnd: string;
+  totalAmount: number;
+  transactionCount: number;
+  status: SettlementStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  processedAt?: string;
+  bankReference?: string;
+  journalEntryId?: string;
+  metadata?: Record<string, unknown>;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SettlementLineItem {
+  id: string;
+  settlementId: string;
+  date: string;
+  description: string;
+  transactionCount: number;
+  amount: number;
+  reference?: string;
+}
+
+export type ReconciliationType = 'MPESA_STATEMENT' | 'BANK_STATEMENT' | 'LEDGER_COMPARISON';
+export type ReconciliationStatus = 'PENDING' | 'IN_PROGRESS' | 'MATCHED' | 'UNMATCHED' | 'RESOLVED';
+export type MatchType = 'EXACT' | 'AMOUNT_ONLY' | 'REFERENCE_ONLY' | 'FUZZY' | 'MANUAL' | 'UNMATCHED';
+
+export interface ReconciliationRecord {
+  id: string;
+  reconciliationNumber: string;
+  reconciliationType: ReconciliationType;
+  reconciliationDate: string;
+  periodStart: string;
+  periodEnd: string;
+  sourceSystem: string;
+  targetSystem: string;
+  totalSourceAmount: number;
+  totalTargetAmount: number;
+  variance: number;
+  totalSourceItems: number;
+  totalTargetItems: number;
+  matchedItems: number;
+  unmatchedItems: number;
+  autoMatchedItems: number;
+  manualMatchedItems: number;
+  status: ReconciliationStatus;
+  completedAt?: string;
+  completedBy?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReconciliationItem {
+  id: string;
+  reconciliationRecordId: string;
+  sourceReference: string;
+  sourceAmount: number;
+  sourceDate: string;
+  sourceDescription?: string;
+  targetReference?: string;
+  targetAmount?: number;
+  targetDate?: string;
+  targetDescription?: string;
+  matchType: MatchType;
+  matchConfidence?: number;
+  variance: number;
+  status: ReconciliationStatus;
+  ledgerTransactionId?: string;
+  manualMatchedBy?: string;
+  manualMatchedAt?: string;
+  resolution?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
+
+export interface AccountingDashboardSummary {
+  totalAssets: number;
+  totalLiabilities: number;
+  netIncome: number;
+  cashBalance: number;
+  premiumPayable: number;
+  serviceFeesPayable: number;
+  // KES conversions from API
+  totalAssetsKes: number;
+  totalLiabilitiesKes: number;
+  netIncomeKes: number;
+  cashBalanceKes: number;
+  premiumPayableKes: number;
+  serviceFeesPayableKes: number;
+}
+
+export interface AccountBalance {
+  accountCode: string;
+  accountName: string;
+  balance: number;
+  balanceKes?: number;
+}
+
+export interface BalanceSheetReport {
+  asOf?: string;
+  reportDate?: string;
+  generatedAt?: string;
+  assets?: {
+    accounts?: AccountBalance[];
+    total?: number;
+    totalKes?: number;
+  };
+  liabilities?: {
+    accounts?: AccountBalance[];
+    total?: number;
+    totalKes?: number;
+  };
+  equity?: {
+    accounts?: AccountBalance[];
+    retainedEarnings?: number;
+    retainedEarningsKes?: number;
+    total?: number;
+    totalKes?: number;
+  };
+  totalLiabilitiesAndEquity?: number;
+  totalLiabilitiesAndEquityKes?: number;
+  isBalanced?: boolean;
+}
+
+export interface IncomeStatementReport {
+  periodStart?: string;
+  periodEnd?: string;
+  generatedAt?: string;
+  income?: {
+    accounts?: AccountBalance[];
+    total?: number;
+    totalKes?: number;
+  };
+  expenses?: {
+    accounts?: AccountBalance[];
+    total?: number;
+    totalKes?: number;
+  };
+  netIncome?: number;
+  netIncomeKes?: number;
+}
+
+export interface PartnerTransaction {
+  date: string;
+  reference: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balance: number;
+  debitKes?: number;
+  creditKes?: number;
+  balanceKes?: number;
+}
+
+export interface PartnerStatementReport {
+  partnerType: PartnerType;
+  partnerName: string;
+  periodStart: string;
+  periodEnd: string;
+  openingBalance: number;
+  openingBalanceKes?: number;
+  closingBalance: number;
+  closingBalanceKes?: number;
+  transactions: PartnerTransaction[];
+  summary: {
+    totalDebits: number;
+    totalCredits: number;
+    settledAmount: number;
+    pendingAmount: number;
+    totalDebitsKes?: number;
+    totalCreditsKes?: number;
+    settledAmountKes?: number;
+    pendingAmountKes?: number;
+  };
+}

@@ -11,6 +11,7 @@ export interface SeedingResult {
   organizationsSeeded: number;
   policyTermsSeeded: number;
   testPoliciesSeeded: number;
+  glAccountsSeeded: number;
   durationMs: number;
   errors: string[];
 }
@@ -43,6 +44,7 @@ export class SeedingRunnerService {
     let organizationsSeeded = 0;
     let policyTermsSeeded = 0;
     let testPoliciesSeeded = 0;
+    let glAccountsSeeded = 0;
 
     this.logger.log('Starting database seeding...');
     this.logger.log('');
@@ -71,6 +73,7 @@ export class SeedingRunnerService {
       organizationsSeeded = dataResult.organizationsSeeded;
       policyTermsSeeded = dataResult.policyTermsSeeded;
       testPoliciesSeeded = dataResult.testPoliciesSeeded;
+      glAccountsSeeded = dataResult.glAccountsSeeded;
 
       if (!dataResult.success) {
         errors.push(`Data seeding failed: ${dataResult.error}`);
@@ -102,6 +105,7 @@ export class SeedingRunnerService {
       organizationsSeeded,
       policyTermsSeeded,
       testPoliciesSeeded,
+      glAccountsSeeded,
       durationMs,
       errors,
     };

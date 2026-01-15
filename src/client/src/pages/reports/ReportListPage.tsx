@@ -72,7 +72,7 @@ export default function ReportListPage() {
 
   // Preview dialog state
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
-  const [previewReportId, setPreviewReportId] = useState<string | null>(null);
+  const [, setPreviewReportId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<CashFlowReportMetadata | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 

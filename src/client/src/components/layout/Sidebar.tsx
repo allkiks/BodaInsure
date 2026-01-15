@@ -14,6 +14,11 @@ import {
   User,
   Upload,
   FileText,
+  DollarSign,
+  Calculator,
+  FileSearch,
+  TrendingUp,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useMemo } from 'react';
@@ -80,6 +85,25 @@ const adminNavItems: NavItem[] = [
     path: '/reports',
     icon: <FileBarChart className="h-5 w-5" />,
     roles: ['platform_admin', 'sacco_admin', 'kba_admin', 'insurance_admin'],
+  },
+  {
+    label: 'Audit Log',
+    path: '/admin/audit',
+    icon: <Activity className="h-5 w-5" />,
+    roles: ['platform_admin', 'insurance_admin'],
+  },
+  {
+    label: 'Accounting',
+    path: '/accounting',
+    icon: <Calculator className="h-5 w-5" />,
+    children: [
+      { label: 'Dashboard', path: '/accounting/dashboard', icon: <TrendingUp className="h-4 w-4" /> },
+      { label: 'Settlements', path: '/accounting/settlements', icon: <DollarSign className="h-4 w-4" /> },
+      { label: 'Chart of Accounts', path: '/accounting/gl-accounts', icon: <FileText className="h-4 w-4" /> },
+      { label: 'Reconciliations', path: '/accounting/reconciliations', icon: <FileSearch className="h-4 w-4" /> },
+      { label: 'Financial Reports', path: '/accounting/reports', icon: <FileBarChart className="h-4 w-4" /> },
+    ],
+    roles: ['platform_admin', 'insurance_admin'],
   },
   {
     label: 'Settings',

@@ -26,6 +26,7 @@ import {
 import { KycModule } from '../kyc/kyc.module.js';
 import { SchedulerModule } from '../scheduler/scheduler.module.js';
 import { BatchSchedulerService } from '../scheduler/services/batch-scheduler.service.js';
+import { AccountingModule } from '../accounting/accounting.module.js';
 
 /**
  * Payment Module
@@ -43,6 +44,7 @@ import { BatchSchedulerService } from '../scheduler/services/batch-scheduler.ser
     ConfigModule,
     forwardRef(() => KycModule), // For KYC status check before payments
     forwardRef(() => SchedulerModule), // For scheduler handler registration
+    AccountingModule, // For posting journal entries on payment completion
   ],
   controllers: [
     PaymentController,

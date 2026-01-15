@@ -36,6 +36,14 @@ const RiderProfilePage = lazy(() => import('@/pages/rider/ProfilePage'));
 // Admin management pages
 const AdminUsersPage = lazy(() => import('@/pages/admin/UsersPage'));
 const AdminUserDetailPage = lazy(() => import('@/pages/admin/UserDetailPage'));
+const AuditLogPage = lazy(() => import('@/pages/admin/AuditLogPage'));
+
+// Accounting pages
+const AccountingDashboard = lazy(() => import('@/pages/accounting/AccountingDashboard'));
+const SettlementsPage = lazy(() => import('@/pages/accounting/SettlementsPage'));
+const GLAccountsPage = lazy(() => import('@/pages/accounting/GLAccountsPage'));
+const ReconciliationsPage = lazy(() => import('@/pages/accounting/ReconciliationsPage'));
+const FinancialReportsPage = lazy(() => import('@/pages/accounting/FinancialReportsPage'));
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -231,6 +239,39 @@ export function AppRouter() {
               <ReportListPage />
             </ProtectedRoute>
           } />
+
+          {/* Accounting routes */}
+          <Route path="accounting" element={
+            <ProtectedRoute allowedRoles={['platform_admin', 'insurance_admin']}>
+              <AccountingDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="accounting/dashboard" element={
+            <ProtectedRoute allowedRoles={['platform_admin', 'insurance_admin']}>
+              <AccountingDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="accounting/settlements" element={
+            <ProtectedRoute allowedRoles={['platform_admin', 'insurance_admin']}>
+              <SettlementsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="accounting/gl-accounts" element={
+            <ProtectedRoute allowedRoles={['platform_admin', 'insurance_admin']}>
+              <GLAccountsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="accounting/reconciliations" element={
+            <ProtectedRoute allowedRoles={['platform_admin', 'insurance_admin']}>
+              <ReconciliationsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="accounting/reports" element={
+            <ProtectedRoute allowedRoles={['platform_admin', 'insurance_admin']}>
+              <FinancialReportsPage />
+            </ProtectedRoute>
+          } />
+
           <Route path="settings" element={<SettingsPage />} />
 
           {/* Admin user management routes */}
@@ -242,6 +283,11 @@ export function AppRouter() {
           <Route path="admin/users/:id" element={
             <ProtectedRoute allowedRoles={['platform_admin']}>
               <AdminUserDetailPage />
+            </ProtectedRoute>
+          } />
+          <Route path="admin/audit" element={
+            <ProtectedRoute allowedRoles={['platform_admin', 'insurance_admin']}>
+              <AuditLogPage />
             </ProtectedRoute>
           } />
 

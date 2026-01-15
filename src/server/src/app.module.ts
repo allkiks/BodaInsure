@@ -8,6 +8,7 @@ import { CommonModule } from './common/common.module.js';
 import { IdentityModule } from './modules/identity/identity.module.js';
 import { KycModule } from './modules/kyc/kyc.module.js';
 import { PaymentModule } from './modules/payment/payment.module.js';
+import { AccountingModule } from './modules/accounting/accounting.module.js';
 import { PolicyModule } from './modules/policy/policy.module.js';
 import { OrganizationModule } from './modules/organization/organization.module.js';
 import { NotificationModule } from './modules/notification/notification.module.js';
@@ -81,6 +82,7 @@ import redisConfig from './config/redis.config.js';
     IdentityModule,
     KycModule,
     PaymentModule,
+    AccountingModule,
     PolicyModule,
     OrganizationModule,
     NotificationModule,

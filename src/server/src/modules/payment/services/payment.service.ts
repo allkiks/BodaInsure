@@ -21,6 +21,9 @@ import { Wallet } from '../entities/wallet.entity.js'; // Used in transaction ma
 import { MpesaService, ParsedCallbackData } from './mpesa.service.js';
 import { WalletService } from './wallet.service.js';
 import { PAYMENT_CONFIG } from '../../../common/constants/index.js';
+import { PostingEngineService } from '../../accounting/services/posting-engine.service.js';
+import { EscrowService } from '../../accounting/services/escrow.service.js';
+import { PAYMENT_AMOUNTS } from '../../accounting/config/posting-rules.config.js';
 
 /**
  * Payment initiation request
@@ -76,6 +79,8 @@ export class PaymentService {
     private readonly mpesaService: MpesaService,
     private readonly walletService: WalletService,
     private readonly dataSource: DataSource,
+    private readonly postingEngineService: PostingEngineService,
+    private readonly escrowService: EscrowService,
   ) {}
 
   /**
@@ -331,7 +336,7 @@ export class PaymentService {
     }
 
     // Payment successful - process in transaction
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const txnRepo = manager.getRepository(Transaction);
       const walletRepo = manager.getRepository(Wallet);
       const requestRepo = manager.getRepository(PaymentRequest);
@@ -425,8 +430,95 @@ export class PaymentService {
         paymentRequestId: paymentRequest.id,
         message: 'Payment processed successfully',
         triggeredPolicy,
+        // Include data needed for posting and escrow
+        _postingData: {
+          userId: paymentRequest.userId,
+          paymentType: paymentRequest.paymentType,
+          amountCents: paymentRequest.amount,
+          daysCount: paymentRequest.daysCount,
+          mpesaReceiptNumber: callbackData.mpesaReceiptNumber,
+          // For escrow tracking - payment day (1 for deposit, else daily payment number)
+          paymentDay: paymentRequest.paymentType === TransactionType.DEPOSIT
+            ? 1
+            : wallet.dailyPaymentsCount - paymentRequest.daysCount + 1, // First day of batch
+        },
       };
     });
+
+    // Post journal entry after transaction commits (outside transaction for isolation)
+    // This is idempotent - safe to call on retries from UI or duplicate callbacks
+    if (result.success && result.transactionId) {
+      try {
+        const postingResult = await this.postingEngineService.postPaymentReceipt({
+          transactionId: result.transactionId,
+          userId: result._postingData.userId,
+          paymentType: result._postingData.paymentType === TransactionType.DEPOSIT ? 'DEPOSIT' : 'DAILY_PAYMENT',
+          amountCents: result._postingData.amountCents,
+          daysCount: result._postingData.daysCount,
+          mpesaReceiptNumber: result._postingData.mpesaReceiptNumber,
+        });
+
+        if (postingResult.success) {
+          this.logger.log(
+            `Journal entry ${postingResult.alreadyPosted ? 'already exists' : 'created'}: ${postingResult.entryNumber}`,
+          );
+        } else {
+          // Log warning but don't fail the payment - posting can be retried
+          this.logger.warn(
+            `Failed to post journal entry for transaction ${result.transactionId.slice(0, 8)}...: ${postingResult.message}`,
+          );
+        }
+      } catch (postingError) {
+        // Log error but don't fail the payment - posting can be retried
+        this.logger.error(
+          `Error posting journal entry for transaction ${result.transactionId.slice(0, 8)}...`,
+          postingError,
+        );
+      }
+
+      // Create escrow record for premium tracking (Epic 5)
+      // This is idempotent - safe to call on retries from UI or duplicate callbacks
+      try {
+        // Calculate premium and service fee amounts based on payment type
+        const isDeposit = result._postingData.paymentType === TransactionType.DEPOSIT;
+        const daysCount = result._postingData.daysCount;
+
+        // Premium amounts per Accounting_Remediation.md
+        const premiumAmountCents = isDeposit
+          ? PAYMENT_AMOUNTS.DAY1_PREMIUM
+          : PAYMENT_AMOUNTS.DAILY_PREMIUM * daysCount;
+
+        // Service fees (total across all fee types)
+        const serviceFeePerDay = PAYMENT_AMOUNTS.SERVICE_FEE_PLATFORM
+          + PAYMENT_AMOUNTS.SERVICE_FEE_KBA
+          + PAYMENT_AMOUNTS.SERVICE_FEE_ROBS;
+        const serviceFeeAmountCents = isDeposit
+          ? serviceFeePerDay
+          : serviceFeePerDay * daysCount;
+
+        const escrowRecord = await this.escrowService.createEscrowRecord({
+          riderId: result._postingData.userId,
+          transactionId: result.transactionId,
+          paymentDay: result._postingData.paymentDay,
+          premiumAmountCents,
+          serviceFeeAmountCents,
+        });
+
+        this.logger.log(
+          `Escrow record ${escrowRecord.id ? 'created' : 'already exists'}: type=${escrowRecord.escrowType} premium=${escrowRecord.getPremiumInKes()} KES`,
+        );
+      } catch (escrowError) {
+        // Log error but don't fail the payment - escrow can be created manually if needed
+        this.logger.error(
+          `Error creating escrow record for transaction ${result.transactionId.slice(0, 8)}...`,
+          escrowError,
+        );
+      }
+    }
+
+    // Return the result without internal posting data
+    const { _postingData, ...callbackResult } = result;
+    return callbackResult;
   }
 
   /**
