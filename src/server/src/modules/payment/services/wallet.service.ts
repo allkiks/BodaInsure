@@ -499,6 +499,63 @@ export class WalletService {
   }
 
   /**
+   * Reset wallet after refund completion
+   * Called when a policy cancellation refund is completed
+   *
+   * This resets the wallet to initial state so rider can start fresh
+   */
+  async resetWalletForRefund(
+    userId: string,
+    reason: string,
+  ): Promise<Wallet> {
+    return this.dataSource.transaction(async (manager) => {
+      const walletRepo = manager.getRepository(Wallet);
+
+      const wallet = await walletRepo.findOne({
+        where: { userId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!wallet) {
+        throw new NotFoundException('Wallet not found');
+      }
+
+      // Store previous state in metadata for audit
+      const previousState = {
+        balance: Number(wallet.balance),
+        totalDeposited: Number(wallet.totalDeposited),
+        totalPaid: Number(wallet.totalPaid),
+        depositCompleted: wallet.depositCompleted,
+        dailyPaymentsCount: wallet.dailyPaymentsCount,
+        dailyPaymentsCompleted: wallet.dailyPaymentsCompleted,
+        resetAt: new Date().toISOString(),
+        resetReason: reason,
+      };
+
+      // Reset wallet to initial state
+      wallet.balance = 0;
+      wallet.totalDeposited = 0;
+      wallet.totalPaid = 0;
+      wallet.depositCompleted = false;
+      wallet.depositCompletedAt = undefined;
+      wallet.dailyPaymentsCount = 0;
+      wallet.dailyPaymentsCompleted = false;
+      wallet.dailyPaymentsCompletedAt = undefined;
+      wallet.lastDailyPaymentAt = undefined;
+      wallet.status = WalletStatus.ACTIVE;
+
+      await walletRepo.save(wallet);
+
+      this.logger.log(
+        `Wallet reset for refund: userId=${userId.slice(0, 8)}... ` +
+        `previousBalance=${previousState.balance / 100} KES, reason=${reason}`
+      );
+
+      return wallet;
+    });
+  }
+
+  /**
    * Get users in grace period (for reminder notifications)
    * Per GAP-010 and notification requirements
    */

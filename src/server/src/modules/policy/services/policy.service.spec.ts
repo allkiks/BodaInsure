@@ -4,6 +4,7 @@ import { Repository, In } from 'typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PolicyService } from './policy.service.js';
 import { BatchProcessingService, PolicyIssuanceRequest } from './batch-processing.service.js';
+import { RefundService } from './refund.service.js';
 import { Policy, PolicyType, PolicyStatus } from '../entities/policy.entity.js';
 import { PolicyDocument, DocumentStatus } from '../entities/policy-document.entity.js';
 
@@ -31,6 +32,12 @@ describe('PolicyService', () => {
     createPendingPolicy: jest.fn(),
   };
 
+  const mockRefundService = {
+    getCancellationPreview: jest.fn(),
+    cancelPolicy: jest.fn(),
+    createRefund: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -46,6 +53,10 @@ describe('PolicyService', () => {
         {
           provide: BatchProcessingService,
           useValue: mockBatchProcessingService,
+        },
+        {
+          provide: RefundService,
+          useValue: mockRefundService,
         },
       ],
     }).compile();
@@ -714,12 +725,21 @@ describe('PolicyService', () => {
           status: PolicyStatus.CANCELLED,
         } as Policy);
 
+        // Mock the refund creation
+        mockRefundService.createRefund.mockResolvedValue({
+          id: 'refund-123',
+          refundNumber: 'REF-20260116-001',
+          originalAmountCents: 104800,
+          refundAmountCents: 104800,
+        });
+
         const result = await service.cancelPolicy(policyId, userId, 'Changed mind');
 
         expect(result.refundEligible).toBe(true);
-        expect(result.refundAmount).toBe(1048);
+        // Refund is 90% of premium: floor(1048 * 0.9) = 943
+        expect(result.refundAmount).toBe(943);
         expect(result.message).toContain('free look period');
-        expect(result.message).toContain('full refund');
+        expect(result.message).toContain('90%');
       });
 
       it('should not provide refund after free look period', async () => {

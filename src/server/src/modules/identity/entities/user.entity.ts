@@ -23,6 +23,7 @@ export enum UserRole {
   KBA_ADMIN = 'kba_admin',
   INSURANCE_ADMIN = 'insurance_admin',
   PLATFORM_ADMIN = 'platform_admin',
+  SUPERUSER = 'superuser',
 }
 
 /**

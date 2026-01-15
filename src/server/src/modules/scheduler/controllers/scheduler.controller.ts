@@ -9,7 +9,13 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../../../common/guards/roles.guard.js';
+import { Roles } from '../../../common/decorators/roles.decorator.js';
+import { ROLES } from '../../../common/constants/index.js';
 import { JobService } from '../services/job.service.js';
 import { SchedulerService } from '../services/scheduler.service.js';
 import { JobType, JobStatus } from '../entities/job.entity.js';
@@ -30,8 +36,14 @@ class CreateJobDto {
 /**
  * Scheduler Controller
  * Manages scheduled jobs
+ *
+ * All endpoints require SUPERUSER or PLATFORM_ADMIN role.
  */
+@ApiTags('Scheduler')
+@ApiBearerAuth()
 @Controller('scheduler')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(ROLES.SUPERUSER, ROLES.PLATFORM_ADMIN)
 export class SchedulerController {
   constructor(
     private readonly jobService: JobService,
@@ -151,18 +163,29 @@ export class SchedulerController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body('userId') userId: string = 'system',
   ) {
-    try {
-      const result = await this.schedulerService.triggerNow(id, userId);
-      return {
-        success: true,
-        result,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
+    const result = await this.schedulerService.triggerNow(id, userId);
+    // Return updated job after triggering
+    const job = await this.jobService.getById(id);
+    return {
+      id: job.id,
+      name: job.name,
+      type: job.type,
+      status: job.status,
+      isRecurring: job.isRecurring,
+      cronExpression: job.cronExpression,
+      config: job.config,
+      scheduledAt: job.scheduledAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      nextRunAt: job.nextRunAt,
+      durationMs: job.durationMs,
+      result: result || job.result,
+      errorMessage: job.errorMessage,
+      retryCount: job.retryCount,
+      maxRetries: job.maxRetries,
+      isEnabled: job.isEnabled,
+      createdAt: job.createdAt,
+    };
   }
 
   /**
@@ -173,8 +196,15 @@ export class SchedulerController {
     const job = await this.jobService.pause(id);
     return {
       id: job.id,
+      name: job.name,
+      type: job.type,
       status: job.status,
+      isRecurring: job.isRecurring,
+      cronExpression: job.cronExpression,
+      scheduledAt: job.scheduledAt,
+      nextRunAt: job.nextRunAt,
       isEnabled: job.isEnabled,
+      createdAt: job.createdAt,
     };
   }
 
@@ -186,9 +216,15 @@ export class SchedulerController {
     const job = await this.jobService.resume(id);
     return {
       id: job.id,
+      name: job.name,
+      type: job.type,
       status: job.status,
-      isEnabled: job.isEnabled,
+      isRecurring: job.isRecurring,
+      cronExpression: job.cronExpression,
       scheduledAt: job.scheduledAt,
+      nextRunAt: job.nextRunAt,
+      isEnabled: job.isEnabled,
+      createdAt: job.createdAt,
     };
   }
 
@@ -200,7 +236,15 @@ export class SchedulerController {
     const job = await this.jobService.cancel(id);
     return {
       id: job.id,
+      name: job.name,
+      type: job.type,
       status: job.status,
+      isRecurring: job.isRecurring,
+      cronExpression: job.cronExpression,
+      scheduledAt: job.scheduledAt,
+      nextRunAt: job.nextRunAt,
+      isEnabled: job.isEnabled,
+      createdAt: job.createdAt,
     };
   }
 
@@ -237,21 +281,35 @@ export class SchedulerController {
    * Get recent execution history
    */
   @Get('history')
-  async getRecentHistory(@Query('hours') hours?: string) {
+  async getRecentHistory(
+    @Query('hours') hours?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     const history = await this.jobService.getRecentHistory(
       hours ? parseInt(hours, 10) : 24,
     );
 
-    return history.map((h) => ({
-      id: h.id,
-      jobId: h.jobId,
-      jobName: h.jobName,
-      status: h.status,
-      startedAt: h.startedAt,
-      endedAt: h.endedAt,
-      durationMs: h.durationMs,
-      triggeredBy: h.triggeredBy,
-    }));
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    const total = history.length;
+
+    // Apply pagination
+    const paginatedHistory = history.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+
+    return {
+      history: paginatedHistory.map((h) => ({
+        id: h.id,
+        jobId: h.jobId,
+        jobName: h.jobName,
+        status: h.status,
+        startedAt: h.startedAt,
+        endedAt: h.endedAt,
+        durationMs: h.durationMs,
+        triggeredBy: h.triggeredBy,
+      })),
+      total,
+    };
   }
 
   /**
@@ -263,7 +321,7 @@ export class SchedulerController {
     const created = await this.jobService.seedDefaultJobs();
     return {
       message: created > 0 ? `Seeded ${created} jobs` : 'Default jobs already exist',
-      created,
+      jobsCreated: created,
     };
   }
 
@@ -274,7 +332,7 @@ export class SchedulerController {
   @HttpCode(HttpStatus.OK)
   startScheduler() {
     this.schedulerService.start();
-    return { status: 'started' };
+    return { message: 'Scheduler started', status: 'started' };
   }
 
   /**
@@ -284,6 +342,6 @@ export class SchedulerController {
   @HttpCode(HttpStatus.OK)
   stopScheduler() {
     this.schedulerService.stop();
-    return { status: 'stopped' };
+    return { message: 'Scheduler stopped', status: 'stopped' };
   }
 }

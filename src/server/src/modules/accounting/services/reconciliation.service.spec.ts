@@ -412,6 +412,7 @@ describe('ReconciliationService', () => {
               ...mockReconciliationRecord,
               matchedCount: 5,
               unmatchedCount: 5,
+              manualMatchedCount: 0,
             }),
             save: jest.fn().mockImplementation((record) => {
               savedRecord = record;

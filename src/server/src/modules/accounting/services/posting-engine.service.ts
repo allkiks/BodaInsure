@@ -8,6 +8,7 @@ import {
   getDay1RemittancePostingLines,
   getBulkRemittancePostingLines,
   getRefundPostingLines,
+  getRefundPayoutPostingLines,
   getJournalEntryTypeForPayment,
 } from '../config/posting-rules.config.js';
 
@@ -300,6 +301,92 @@ export class PostingEngineService {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.logger.error(
         `Failed to post refund for transaction ${transactionId.slice(0, 8)}...`,
+        error,
+      );
+      return {
+        success: false,
+        message: `Posting failed: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * Post a refund payout to rider (M-Pesa B2C completion)
+   *
+   * This clears the liability in account 2101 when the refund is actually paid out.
+   *
+   * @param input - Refund payout details
+   * @returns Posting result
+   */
+  async postRefundPayout(input: {
+    transactionId: string;
+    userId: string;
+    refundAmountCents: number;
+    mpesaTransactionId?: string;
+    description?: string;
+    createdBy?: string;
+  }): Promise<PostingResult> {
+    const { transactionId, userId, refundAmountCents } = input;
+
+    // Use a specific key for payout to differentiate from initiation
+    const payoutTransactionId = `${transactionId}-payout`;
+
+    // Check if already posted (idempotency)
+    const existingEntries = await this.journalEntryService.getBySourceTransactionId(payoutTransactionId);
+    const existing = existingEntries[0];
+    if (existing) {
+      return {
+        success: true,
+        journalEntryId: existing.id,
+        entryNumber: existing.entryNumber,
+        message: 'Journal entry already posted',
+        alreadyPosted: true,
+      };
+    }
+
+    try {
+      const lines = getRefundPayoutPostingLines(refundAmountCents);
+
+      const description = input.description ||
+        `Refund payout to rider: ${refundAmountCents / 100} KES${input.mpesaTransactionId ? ` (${input.mpesaTransactionId})` : ''}`;
+
+      const journalEntry = await this.journalEntryService.create({
+        entryType: JournalEntryType.REFUND_EXECUTION,
+        entryDate: new Date(),
+        description,
+        lines: lines.map((line) => ({
+          accountCode: line.accountCode,
+          debitAmount: line.debitAmount,
+          creditAmount: line.creditAmount,
+          description: line.description,
+        })),
+        sourceTransactionId: payoutTransactionId,
+        sourceEntityType: 'RefundPayout',
+        sourceEntityId: transactionId,
+        riderId: userId,
+        createdBy: input.createdBy,
+        autoPost: true,
+        metadata: {
+          refundAmountCents,
+          mpesaTransactionId: input.mpesaTransactionId,
+          originalRefundId: transactionId,
+        },
+      });
+
+      this.logger.log(
+        `Posted refund payout: txn=${transactionId.slice(0, 8)}... entry=${journalEntry.entryNumber} amount=${refundAmountCents / 100} KES`,
+      );
+
+      return {
+        success: true,
+        journalEntryId: journalEntry.id,
+        entryNumber: journalEntry.entryNumber,
+        message: `Journal entry ${journalEntry.entryNumber} created and posted`,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Failed to post refund payout for transaction ${transactionId.slice(0, 8)}...`,
         error,
       );
       return {

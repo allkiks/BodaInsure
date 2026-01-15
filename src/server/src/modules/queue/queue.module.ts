@@ -9,6 +9,7 @@ import { QueueName } from './interfaces/job.interface.js';
 import { NotificationProcessor } from './processors/notification.processor.js';
 import { PolicyProcessor } from './processors/policy.processor.js';
 import { ReportProcessor } from './processors/report.processor.js';
+import { DelayedPaymentProcessor, DELAYED_PAYMENT_QUEUE } from '../payment/processors/delayed-payment.processor.js';
 
 // Services
 import { QueueService } from './services/queue.service.js';
@@ -17,6 +18,7 @@ import { QueueService } from './services/queue.service.js';
 import { NotificationModule } from '../notification/notification.module.js';
 import { PolicyModule } from '../policy/policy.module.js';
 import { ReportingModule } from '../reporting/reporting.module.js';
+import { PaymentModule } from '../payment/payment.module.js';
 
 /**
  * Queue Module
@@ -100,18 +102,33 @@ import { ReportingModule } from '../reporting/reporting.module.js';
           },
         },
       },
+      // Delayed payment queue - Per M-Pesa Payment Flow Improvements Phase 4
+      {
+        name: DELAYED_PAYMENT_QUEUE,
+        defaultJobOptions: {
+          attempts: 5, // More retries for payment resolution
+          backoff: {
+            type: 'exponential',
+            delay: 30000, // Start with 30s, then 60s, 120s, 240s, 480s
+          },
+          removeOnComplete: true,
+          removeOnFail: false, // Keep failed jobs for debugging
+        },
+      },
     ),
 
     // External module dependencies
     forwardRef(() => NotificationModule),
     forwardRef(() => PolicyModule),
     forwardRef(() => ReportingModule),
+    forwardRef(() => PaymentModule), // For delayed payment processing
   ],
   providers: [
     // Queue processors
     NotificationProcessor,
     PolicyProcessor,
     ReportProcessor,
+    DelayedPaymentProcessor, // Delayed payment processor
 
     // Queue service
     QueueService,

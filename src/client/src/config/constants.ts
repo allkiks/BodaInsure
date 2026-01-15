@@ -109,6 +109,18 @@ export const API_ENDPOINTS = {
   ACCOUNTING_REPORTS_INCOME_STATEMENT: '/accounting/reports/income-statement',
   ACCOUNTING_REPORTS_PARTNER_STATEMENT: '/accounting/reports/partner-statement',
 
+  // Scheduler
+  SCHEDULER_STATUS: '/scheduler/status',
+  SCHEDULER_STATS: '/scheduler/stats',
+  SCHEDULER_JOBS: '/scheduler/jobs',
+  SCHEDULER_HISTORY: '/scheduler/history',
+
+  // Refunds
+  REFUNDS: '/refunds',
+  REFUNDS_PENDING: '/refunds/pending',
+  REFUNDS_APPROVED: '/refunds/approved',
+  REFUNDS_STATS: '/refunds/stats',
+
   // Settings
   SETTINGS: '/settings',
 } as const;

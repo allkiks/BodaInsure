@@ -317,6 +317,23 @@ export class PaymentService {
     paymentRequest.callbackReceivedAt = new Date();
     paymentRequest.resultCode = String(callbackData.resultCode);
     paymentRequest.resultDescription = callbackData.resultDesc;
+
+    // Calculate and log callback delay for monitoring (Phase 8: Monitoring Enhancements)
+    const callbackDelaySeconds = Math.floor(
+      (paymentRequest.callbackReceivedAt.getTime() - paymentRequest.createdAt.getTime()) / 1000
+    );
+    const isDelayedCallback = callbackDelaySeconds > 60;
+
+    this.logger.log({
+      event: 'payment_callback_received',
+      paymentRequestId: paymentRequest.id,
+      callbackDelaySeconds,
+      isDelayedCallback,
+      resultCode: callbackData.resultCode,
+      isSuccessful: callbackData.isSuccessful,
+      mpesaReceiptNumber: callbackData.mpesaReceiptNumber,
+      paymentType: paymentRequest.paymentType,
+    });
     paymentRequest.callbackPayload = callbackData as unknown as Record<string, unknown>;
 
     if (!callbackData.isSuccessful) {
@@ -973,6 +990,184 @@ export class PaymentService {
     return {
       success: true,
       message: 'Refund timeout processed - pending retry',
+    };
+  }
+
+  // ============================================================
+  // Phase 3: Progressive Timeout Handling
+  // ============================================================
+
+  /**
+   * Get payment status with detailed delay information
+   *
+   * Provides enhanced status info including whether the payment is delayed,
+   * how long the delay is, and recommended actions for the user.
+   *
+   * @param requestId - Payment request ID
+   * @param userId - User ID (for ownership validation)
+   */
+  async getPaymentStatusWithDelayInfo(
+    requestId: string,
+    userId: string,
+  ): Promise<{
+    status: PaymentRequestStatus;
+    isDelayed: boolean;
+    delaySeconds?: number;
+    recommendedAction: 'wait' | 'refresh' | 'contact_support';
+    message: string;
+    mpesaReceiptNumber?: string;
+    resultCode?: string;
+  }> {
+    const paymentRequest = await this.paymentRequestRepository.findOne({
+      where: { id: requestId },
+    });
+
+    if (!paymentRequest) {
+      throw new NotFoundException('Payment request not found');
+    }
+
+    // Verify ownership
+    if (paymentRequest.userId !== userId) {
+      throw new NotFoundException('Payment request not found');
+    }
+
+    const elapsedSeconds = Math.floor(
+      (Date.now() - paymentRequest.createdAt.getTime()) / 1000
+    );
+
+    // Handle completed payments
+    if (paymentRequest.status === PaymentRequestStatus.COMPLETED) {
+      return {
+        status: paymentRequest.status,
+        isDelayed: false,
+        message: 'Payment completed successfully',
+        recommendedAction: 'wait',
+        mpesaReceiptNumber: paymentRequest.mpesaReceiptNumber ?? undefined,
+      };
+    }
+
+    // Handle failed/cancelled/timeout payments
+    if (paymentRequest.status === PaymentRequestStatus.FAILED ||
+        paymentRequest.status === PaymentRequestStatus.CANCELLED ||
+        paymentRequest.status === PaymentRequestStatus.TIMEOUT) {
+      return {
+        status: paymentRequest.status,
+        isDelayed: false,
+        message: paymentRequest.resultDescription ?? 'Payment failed',
+        recommendedAction: 'wait',
+        resultCode: paymentRequest.resultCode ?? undefined,
+      };
+    }
+
+    // Payment is still in SENT status - check if delayed
+    const isDelayed = elapsedSeconds > 60;
+
+    let recommendedAction: 'wait' | 'refresh' | 'contact_support' = 'wait';
+    let message = 'Payment is being processed';
+
+    if (isDelayed) {
+      if (elapsedSeconds < 180) {
+        // 1-3 minutes
+        recommendedAction = 'refresh';
+        message = 'Payment is taking longer than expected. We are checking with M-Pesa.';
+      } else if (elapsedSeconds < 600) {
+        // 3-10 minutes
+        recommendedAction = 'refresh';
+        message = 'Payment confirmation delayed. Please check your M-Pesa messages.';
+      } else {
+        // > 10 minutes
+        recommendedAction = 'contact_support';
+        message = 'Payment status uncertain. Please contact support with your M-Pesa receipt.';
+      }
+
+      // Log delayed payment for monitoring
+      this.logger.warn({
+        event: 'payment_delayed',
+        paymentRequestId: requestId,
+        delaySeconds: elapsedSeconds,
+        userId: userId.slice(0, 8) + '...',
+      });
+    }
+
+    return {
+      status: paymentRequest.status,
+      isDelayed,
+      delaySeconds: isDelayed ? elapsedSeconds : undefined,
+      recommendedAction,
+      message,
+    };
+  }
+
+  // ============================================================
+  // Phase 5: Enqueue Delayed Payments
+  // ============================================================
+
+  /**
+   * Enqueue a payment for delayed/background processing
+   *
+   * Called when frontend polling times out and payment is still pending.
+   * Adds the payment to a monitoring queue for background resolution.
+   *
+   * @param requestId - Payment request ID
+   * @param userId - User ID (for ownership validation)
+   */
+  async enqueueForDelayedProcessing(
+    requestId: string,
+    userId: string,
+  ): Promise<{ success: boolean; message: string; queuedAt?: string }> {
+    const paymentRequest = await this.paymentRequestRepository.findOne({
+      where: { id: requestId },
+    });
+
+    if (!paymentRequest) {
+      throw new NotFoundException('Payment request not found');
+    }
+
+    // Verify ownership
+    if (paymentRequest.userId !== userId) {
+      throw new NotFoundException('Payment request not found');
+    }
+
+    // Only enqueue if still in SENT status
+    if (paymentRequest.status !== PaymentRequestStatus.SENT) {
+      this.logger.debug(
+        `Payment ${requestId.slice(0, 8)}... not in SENT status (${paymentRequest.status}), skipping queue`
+      );
+      return {
+        success: true,
+        message: `Payment is in ${paymentRequest.status} status`,
+      };
+    }
+
+    // Check if already queued (prevent duplicate queueing)
+    if (paymentRequest.metadata?.queuedForDelayedProcessing) {
+      return {
+        success: true,
+        message: 'Payment already queued for monitoring',
+        queuedAt: paymentRequest.metadata.queuedAt as string,
+      };
+    }
+
+    // Mark as queued in metadata
+    const now = new Date().toISOString();
+    paymentRequest.metadata = {
+      ...paymentRequest.metadata,
+      queuedForDelayedProcessing: true,
+      queuedAt: now,
+    };
+    await this.paymentRequestRepository.save(paymentRequest);
+
+    this.logger.log({
+      event: 'payment_enqueued_for_monitoring',
+      paymentRequestId: requestId,
+      userId: userId.slice(0, 8) + '...',
+      queuedAt: now,
+    });
+
+    return {
+      success: true,
+      message: 'Payment queued for background monitoring',
+      queuedAt: now,
     };
   }
 }

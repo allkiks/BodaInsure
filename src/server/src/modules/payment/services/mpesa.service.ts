@@ -647,13 +647,30 @@ export class MpesaService {
 
   /**
    * Simulate STK Push for development/testing
+   *
+   * In mock mode, this also schedules a simulated callback to be sent
+   * to the callback URL after a short delay, mimicking M-Pesa's actual behavior.
    */
   private simulateStkPush(request: StkPushRequest): StkPushResponse {
     const mockCheckoutRequestId = `ws_CO_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const mockMerchantRequestId = `${Math.random().toString(36).substring(2, 10)}-${Date.now()}`;
+    const formattedPhone = this.formatPhoneNumber(request.phone);
 
     this.logger.log(
-      `[DEV] Simulated STK Push: phone=${request.phone.slice(-4)} amount=${request.amount}`,
+      `[MOCK] Simulated STK Push: phone=${request.phone.slice(-4)} amount=${request.amount}`,
+    );
+
+    // Schedule simulated callback after delay (mimics M-Pesa callback timing)
+    const mockDelayMs = this.configService.get<number>('MPESA_MOCK_CALLBACK_DELAY_MS', 5000);
+    const shouldSimulateSuccess = this.configService.get<string>('MPESA_MOCK_SIMULATE_FAILURE', 'false') !== 'true';
+
+    this.scheduleSimulatedCallback(
+      mockMerchantRequestId,
+      mockCheckoutRequestId,
+      formattedPhone,
+      request.amount,
+      mockDelayMs,
+      shouldSimulateSuccess,
     );
 
     return {
@@ -664,6 +681,74 @@ export class MpesaService {
       responseDescription: 'Success. Request accepted for processing',
       customerMessage: 'Success. Request accepted for processing',
     };
+  }
+
+  /**
+   * Schedule a simulated M-Pesa callback for mock mode
+   *
+   * This mimics what M-Pesa does in production - after the user "confirms"
+   * on their phone, M-Pesa sends a callback to our endpoint.
+   */
+  private scheduleSimulatedCallback(
+    merchantRequestId: string,
+    checkoutRequestId: string,
+    phone: string,
+    amount: number,
+    delayMs: number,
+    shouldSucceed: boolean,
+  ): void {
+    const callbackUrl = this.callbackUrl;
+
+    if (!callbackUrl) {
+      this.logger.warn('[MOCK] No callback URL configured - skipping callback simulation');
+      return;
+    }
+
+    this.logger.log(`[MOCK] Scheduling simulated callback in ${delayMs}ms to ${callbackUrl}`);
+
+    setTimeout(async () => {
+      try {
+        const mockReceiptNumber = `MOCK${Date.now().toString().slice(-10)}`;
+        const transactionDate = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+
+        // Build callback body matching M-Pesa's exact format
+        const callbackBody: MpesaCallbackBody = {
+          stkCallback: {
+            MerchantRequestID: merchantRequestId,
+            CheckoutRequestID: checkoutRequestId,
+            ResultCode: shouldSucceed ? 0 : 1032, // 1032 = Request cancelled by user
+            ResultDesc: shouldSucceed
+              ? 'The service request is processed successfully.'
+              : 'Request cancelled by user.',
+            ...(shouldSucceed && {
+              CallbackMetadata: {
+                Item: [
+                  { Name: 'Amount', Value: amount },
+                  { Name: 'MpesaReceiptNumber', Value: mockReceiptNumber },
+                  { Name: 'TransactionDate', Value: transactionDate },
+                  { Name: 'PhoneNumber', Value: phone },
+                ],
+              },
+            }),
+          },
+        };
+
+        this.logger.log(
+          `[MOCK] Sending simulated ${shouldSucceed ? 'SUCCESS' : 'FAILURE'} callback: ` +
+          `checkoutRequestId=${checkoutRequestId}, receipt=${mockReceiptNumber}`,
+        );
+
+        // POST to our own callback endpoint
+        await this.httpClient.post(callbackUrl, callbackBody, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000,
+        });
+
+        this.logger.log(`[MOCK] Simulated callback delivered successfully`);
+      } catch (error) {
+        this.logger.error(`[MOCK] Failed to deliver simulated callback: ${error}`);
+      }
+    }, delayMs);
   }
 
   /**

@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { WalletService } from './wallet.service.js';
 import { Wallet, WalletStatus } from '../entities/wallet.entity.js';
+import { PAYMENT_CONFIG } from '../../../common/constants/index.js';
 
 describe('WalletService', () => {
   let service: WalletService;
@@ -222,11 +223,15 @@ describe('WalletService', () => {
 
       const result = await service.getPaymentProgress('user-123');
 
+      const expectedTotalPaid = PAYMENT_CONFIG.DEPOSIT_AMOUNT + (20 * PAYMENT_CONFIG.DAILY_AMOUNT);
+      const totalRequired = PAYMENT_CONFIG.DEPOSIT_AMOUNT + (PAYMENT_CONFIG.TOTAL_DAILY_PAYMENTS * PAYMENT_CONFIG.DAILY_AMOUNT);
+      const expectedProgress = Math.round((expectedTotalPaid / totalRequired) * 100);
+
       expect(result.depositCompleted).toBe(true);
       expect(result.dailyPaymentsCount).toBe(20);
       expect(result.dailyPaymentsRemaining).toBe(10);
-      expect(result.totalPaid).toBe(2788); // 1048 + (20 * 87)
-      expect(result.progressPercentage).toBe(76); // Rounded
+      expect(result.totalPaid).toBe(expectedTotalPaid);
+      expect(result.progressPercentage).toBe(expectedProgress);
       expect(result.policy1Eligible).toBe(true);
       expect(result.policy2Eligible).toBe(false);
     });

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { MpesaService } from './mpesa.service.js';
+import { RedisService } from '../../../common/services/redis.service.js';
 
 describe('MpesaService', () => {
   let service: MpesaService;
@@ -10,6 +11,7 @@ describe('MpesaService', () => {
     get: jest.fn((key: string, defaultValue?: string) => {
       const config: Record<string, string> = {
         MPESA_ENVIRONMENT: 'sandbox',
+        MPESA_USE_MOCK: 'true', // Enable mock mode for testing
         MPESA_CONSUMER_KEY: '',
         MPESA_CONSUMER_SECRET: '',
         MPESA_SHORTCODE: '174379',
@@ -20,11 +22,18 @@ describe('MpesaService', () => {
     }),
   };
 
+  const mockRedisService = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MpesaService,
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: RedisService, useValue: mockRedisService },
       ],
     }).compile();
 

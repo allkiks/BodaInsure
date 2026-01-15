@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { UserService } from './user.service';
 import { OtpService, GenerateOtpResult } from './otp.service';
 import { SessionService, SessionTokens } from './session.service';
+import { SmsService } from '../../notification/services/sms.service';
 import { OtpPurpose } from '../entities/otp.entity';
 import { DeviceType, Session } from '../entities/session.entity';
 import {
@@ -86,6 +87,10 @@ describe('AuthService', () => {
       get: jest.fn().mockReturnValue('30d'),
     };
 
+    const mockSmsService = {
+      send: jest.fn().mockResolvedValue({ success: true }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -94,6 +99,7 @@ describe('AuthService', () => {
         { provide: SessionService, useValue: mockSessionService },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: SmsService, useValue: mockSmsService },
       ],
     }).compile();
 
@@ -439,7 +445,7 @@ describe('AuthService', () => {
       });
 
       expect(result).toEqual({
-        id: mockUserId,
+        userId: mockUserId,
         phone: mockPhone,
         role: UserRole.RIDER,
         organizationId: undefined,

@@ -259,6 +259,76 @@ export class PaymentController {
   }
 
   /**
+   * Get detailed payment status with delay information
+   *
+   * Per M-Pesa Payment Flow Improvements - Phase 3
+   *
+   * Returns enhanced status info including whether the payment is delayed,
+   * duration of delay, and recommended user actions.
+   */
+  @Get('status/:requestId/detailed')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get detailed payment status',
+    description: 'Get payment status with delay detection and recommended actions',
+  })
+  @ApiParam({ name: 'requestId', description: 'Payment request ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Detailed payment status',
+  })
+  @ApiResponse({ status: 404, description: 'Payment request not found' })
+  async getDetailedStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+  ): Promise<{
+    status: string;
+    isDelayed: boolean;
+    delaySeconds?: number;
+    recommendedAction: 'wait' | 'refresh' | 'contact_support';
+    message: string;
+    mpesaReceiptNumber?: string;
+    resultCode?: string;
+  }> {
+    const result = await this.paymentService.getPaymentStatusWithDelayInfo(requestId, user.userId);
+    return result;
+  }
+
+  /**
+   * Enqueue payment for background monitoring
+   *
+   * Per M-Pesa Payment Flow Improvements - Phase 5
+   *
+   * Called when frontend polling times out and payment is still pending.
+   * Queues the payment for background resolution and monitoring.
+   */
+  @Post(':requestId/enqueue-monitoring')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Enqueue payment for monitoring',
+    description: 'Queue a delayed payment for background monitoring and resolution',
+  })
+  @ApiParam({ name: 'requestId', description: 'Payment request ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment queued for monitoring',
+  })
+  @ApiResponse({ status: 404, description: 'Payment request not found' })
+  async enqueueForMonitoring(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    queuedAt?: string;
+  }> {
+    const result = await this.paymentService.enqueueForDelayedProcessing(requestId, user.userId);
+    return result;
+  }
+
+  /**
    * Check if user can make deposit
    */
   @Get('eligibility/deposit')

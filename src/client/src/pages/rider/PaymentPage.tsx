@@ -12,6 +12,9 @@ import {
   AlertTriangle,
   HelpCircle,
   FileWarning,
+  Clock,
+  RefreshCw,
+  Bell,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,7 +38,7 @@ import {
 } from '@/lib/mpesa-errors';
 
 type PaymentType = 'deposit' | 'daily';
-type PaymentStep = 'select' | 'confirm' | 'processing' | 'success' | 'failed';
+type PaymentStep = 'select' | 'confirm' | 'processing' | 'verifying' | 'delayed' | 'success' | 'failed';
 
 export default function PaymentPage() {
   const navigate = useNavigate();
@@ -123,17 +126,51 @@ export default function PaymentPage() {
     }
   };
 
+  // Auto-refresh handler - called when polling times out
+  const handleAutoRefresh = async () => {
+    if (!paymentRequestId) return;
+
+    setStep('verifying');
+    setIsRefreshing(true);
+
+    try {
+      const result = await paymentApi.refreshStatus(paymentRequestId);
+
+      if (result.status === 'COMPLETED') {
+        setMpesaReceiptNumber(result.mpesaReceiptNumber ?? null);
+        setStep('success');
+      } else if (result.status === 'FAILED' || result.status === 'CANCELLED') {
+        const message = result.resultCode
+          ? getMpesaErrorMessage(String(result.resultCode))
+          : result.failureReason ?? 'Payment failed';
+        setErrorMessage(message);
+        setErrorResultCode(result.resultCode?.toString() ?? null);
+        setStep('failed');
+      } else {
+        // Still pending - show delay notification and enqueue for monitoring
+        try {
+          await paymentApi.enqueueForMonitoring(paymentRequestId);
+        } catch {
+          // Ignore enqueue errors - non-critical
+        }
+        setStep('delayed');
+      }
+    } catch {
+      // On error, show delayed state
+      setStep('delayed');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Poll for payment status
   useEffect(() => {
     if (step !== 'processing' || !paymentRequestId) return;
 
     const maxPolls = 30; // 60 seconds (2s interval)
     if (pollingCount >= maxPolls) {
-      // GAP-007: Use specific timeout message from M-Pesa mapping
-      setErrorMessage(getMpesaErrorMessage('TIMEOUT'));
-      // GAP-008: Track timeout for guidance display
-      setErrorResultCode('TIMEOUT');
-      setStep('failed');
+      // Instead of immediately failing, try auto-refresh with M-Pesa
+      handleAutoRefresh();
       return;
     }
 
@@ -364,129 +401,366 @@ export default function PaymentPage() {
     );
   }
 
-  // Step: Processing - with detailed status indicators
+  // Step: Processing - with engaging progress indicators
   if (step === 'confirm' || step === 'processing') {
+    const elapsedSeconds = pollingCount * 2;
+
+    // Fun rotating messages with emojis - changes every 3 seconds
+    const progressMessages = [
+      { emoji: '🏍️', text: 'Revving up your coverage...' },
+      { emoji: '🛡️', text: 'Activating your protection shield...' },
+      { emoji: '🔐', text: 'Securing your journey ahead...' },
+      { emoji: '📱', text: 'Connecting with M-Pesa...' },
+      { emoji: '💚', text: 'Processing with Safaricom...' },
+      { emoji: '🛣️', text: 'Paving your road to safety...' },
+      { emoji: '✨', text: 'Almost there, boda hero!' },
+      { emoji: '🎯', text: 'Locking in your insurance...' },
+      { emoji: '🚀', text: 'Speeding through verification...' },
+      { emoji: '🌟', text: 'Making your ride worry-free...' },
+      { emoji: '💪', text: 'Building your safety net...' },
+      { emoji: '🔄', text: 'Syncing with M-Pesa servers...' },
+    ];
+
+    // Get current message based on elapsed time (changes every 3 seconds)
+    const messageIndex = Math.floor(elapsedSeconds / 3) % progressMessages.length;
+    const currentMessage = progressMessages[messageIndex];
+
     // Determine current phase and messaging based on polling progress
     const getPhaseInfo = () => {
       if (step === 'confirm') {
         return {
-          title: 'Initiating Payment',
+          title: '🚀 Initiating Payment',
           description: 'Connecting to M-Pesa...',
           phase: 1,
+          actionRequired: false,
         };
       }
 
-      const elapsedSeconds = pollingCount * 2;
-
       if (elapsedSeconds < 10) {
         return {
-          title: 'M-Pesa Prompt Sent',
+          title: '📲 M-Pesa Prompt Sent!',
           description: 'Check your phone for the M-Pesa PIN prompt',
           phase: 2,
+          actionRequired: true,
         };
       } else if (elapsedSeconds < 30) {
         return {
-          title: 'Awaiting Your Confirmation',
-          description: 'Enter your M-Pesa PIN on your phone to authorize payment',
+          title: '🔑 Enter Your PIN',
+          description: 'Authorize the payment on your phone',
           phase: 2,
+          actionRequired: true,
+        };
+      } else if (elapsedSeconds < 45) {
+        return {
+          title: '⏳ Verifying Payment',
+          description: 'Confirming with Safaricom...',
+          phase: 3,
+          actionRequired: false,
         };
       } else {
         return {
-          title: 'Verifying Payment',
-          description: 'Please wait while we confirm your payment with M-Pesa...',
+          title: '🔄 Still Processing',
+          description: 'Taking a bit longer than usual...',
           phase: 3,
+          actionRequired: false,
         };
       }
     };
 
     const phaseInfo = getPhaseInfo();
-    const elapsedSeconds = pollingCount * 2;
+
+    // Bubble animation classes
+    const bubbleColors = [
+      'bg-green-400/20',
+      'bg-blue-400/20',
+      'bg-purple-400/20',
+      'bg-yellow-400/20',
+      'bg-pink-400/20',
+    ];
 
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex min-h-[50vh] sm:min-h-[60vh] items-center justify-center px-2 sm:px-4">
+        <Card className="w-full max-w-md text-center overflow-hidden relative">
+          {/* Animated background bubbles - fewer and smaller on mobile */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none hidden sm:block">
+            {[...Array(6)].map((_, i) => (
+              <div
+                key={i}
+                className={`absolute rounded-full ${bubbleColors[i % bubbleColors.length]} animate-pulse`}
+                style={{
+                  width: `${30 + (i * 10)}px`,
+                  height: `${30 + (i * 10)}px`,
+                  left: `${10 + (i * 15)}%`,
+                  top: `${20 + ((i * 20) % 60)}%`,
+                  animationDelay: `${i * 0.3}s`,
+                  animationDuration: `${2 + (i * 0.5)}s`,
+                }}
+              />
+            ))}
+          </div>
+          {/* Simpler bubbles for mobile */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none sm:hidden">
+            {[...Array(3)].map((_, i) => (
+              <div
+                key={i}
+                className={`absolute rounded-full ${bubbleColors[i % bubbleColors.length]} animate-pulse`}
+                style={{
+                  width: `${25 + (i * 8)}px`,
+                  height: `${25 + (i * 8)}px`,
+                  left: `${15 + (i * 25)}%`,
+                  top: `${25 + (i * 20)}%`,
+                  animationDelay: `${i * 0.4}s`,
+                  animationDuration: `${2.5}s`,
+                }}
+              />
+            ))}
+          </div>
+
+          <CardHeader className="relative z-10 px-3 sm:px-6 py-4 sm:py-6">
+            {/* Animated emoji icon - smaller on mobile */}
+            <div className="mx-auto mb-2 sm:mb-4 flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-gradient-to-br from-green-500/20 to-blue-500/20 backdrop-blur-sm">
+              <span className="text-2xl sm:text-4xl animate-bounce" style={{ animationDuration: '2s' }}>
+                {currentMessage.emoji}
+              </span>
             </div>
-            <CardTitle>{phaseInfo.title}</CardTitle>
-            <CardDescription>{phaseInfo.description}</CardDescription>
+            <CardTitle className="text-base sm:text-xl">{phaseInfo.title}</CardTitle>
+            <CardDescription className="text-sm sm:text-base">{phaseInfo.description}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Progress Steps */}
-            <div className="flex items-center justify-center gap-2">
-              {[1, 2, 3].map((stepNum) => (
-                <div key={stepNum} className="flex items-center">
+
+          <CardContent className="space-y-3 sm:space-y-5 relative z-10 px-3 sm:px-6 pb-4 sm:pb-6">
+            {/* Progress Steps with icons - compact on mobile */}
+            <div className="flex items-center justify-center gap-1 sm:gap-2">
+              {[
+                { num: 1, icon: '📤', label: 'Send' },
+                { num: 2, icon: '🔑', label: 'Confirm' },
+                { num: 3, icon: '✅', label: 'Done' },
+              ].map((s) => (
+                <div key={s.num} className="flex items-center">
                   <div
-                    className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium ${
-                      stepNum < phaseInfo.phase
-                        ? 'bg-green-500 text-white'
-                        : stepNum === phaseInfo.phase
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground'
+                    className={`flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full text-xs sm:text-sm font-medium transition-all duration-500 ${
+                      s.num < phaseInfo.phase
+                        ? 'bg-green-500 text-white scale-100'
+                        : s.num === phaseInfo.phase
+                        ? 'bg-primary text-primary-foreground scale-105 sm:scale-110 ring-2 sm:ring-4 ring-primary/30'
+                        : 'bg-muted text-muted-foreground scale-90'
                     }`}
                   >
-                    {stepNum < phaseInfo.phase ? (
-                      <CheckCircle className="h-4 w-4" />
+                    {s.num < phaseInfo.phase ? (
+                      <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />
                     ) : (
-                      stepNum
+                      <span className="text-sm sm:text-base">{s.icon}</span>
                     )}
                   </div>
-                  {stepNum < 3 && (
+                  {s.num < 3 && (
                     <div
-                      className={`mx-1 h-0.5 w-8 ${
-                        stepNum < phaseInfo.phase ? 'bg-green-500' : 'bg-muted'
+                      className={`mx-0.5 sm:mx-1 h-0.5 sm:h-1 w-4 sm:w-6 rounded-full transition-all duration-500 ${
+                        s.num < phaseInfo.phase ? 'bg-green-500' : 'bg-muted'
                       }`}
                     />
                   )}
                 </div>
               ))}
             </div>
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Initiate</span>
-              <span>Authorize</span>
-              <span>Verify</span>
-            </div>
 
-            {/* Instructions */}
-            <div className="rounded-lg bg-muted p-4 text-left">
-              <p className="text-sm font-medium">
-                {phaseInfo.phase === 2 ? '📱 Action Required:' : 'Please wait...'}
-              </p>
-              {phaseInfo.phase === 2 ? (
-                <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                  <li>• Check your phone for M-Pesa prompt</li>
-                  <li>• Enter your M-Pesa PIN to authorize</li>
-                  <li>• Do not close this page</li>
-                </ul>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {phaseInfo.phase === 1
-                    ? 'Setting up secure connection...'
-                    : 'Confirming payment with Safaricom...'}
+            {/* Dynamic status message bubble - responsive */}
+            <div className="mx-auto max-w-full sm:max-w-[280px]">
+              <div className={`rounded-xl sm:rounded-2xl p-2.5 sm:p-4 transition-all duration-500 ${
+                phaseInfo.actionRequired
+                  ? 'bg-yellow-100 dark:bg-yellow-900/30 border-2 border-yellow-300 dark:border-yellow-700'
+                  : 'bg-muted'
+              }`}>
+                <p className={`text-xs sm:text-sm font-medium flex items-center justify-center gap-1.5 sm:gap-2 ${
+                  phaseInfo.actionRequired ? 'text-yellow-800 dark:text-yellow-200' : ''
+                }`}>
+                  <span className="text-base sm:text-lg">{currentMessage.emoji}</span>
+                  <span className="leading-tight">{currentMessage.text}</span>
                 </p>
-              )}
+              </div>
             </div>
 
-            {/* Time indicator */}
+            {/* Action required box - compact on mobile */}
+            {phaseInfo.actionRequired && (
+              <div className="rounded-lg sm:rounded-xl bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 p-2.5 sm:p-4 text-left border border-green-200 dark:border-green-800">
+                <p className="text-xs sm:text-sm font-bold text-green-700 dark:text-green-300 flex items-center gap-1.5 sm:gap-2">
+                  <Smartphone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  📱 Check Your Phone!
+                </p>
+                <div className="mt-1.5 sm:mt-2 space-y-0.5 sm:space-y-1">
+                  <p className="text-xs sm:text-sm text-green-600 dark:text-green-400 flex items-center gap-1.5 sm:gap-2">
+                    <span>👆</span> <span>Look for M-Pesa pop-up</span>
+                  </p>
+                  <p className="text-xs sm:text-sm text-green-600 dark:text-green-400 flex items-center gap-1.5 sm:gap-2">
+                    <span>🔢</span> <span>Enter your PIN</span>
+                  </p>
+                  <p className="text-xs sm:text-sm text-green-600 dark:text-green-400 flex items-center gap-1.5 sm:gap-2">
+                    <span>⏰</span> <span>Keep this page open</span>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Animated progress bar */}
             {step === 'processing' && (
-              <div className="space-y-1">
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div className="space-y-1 sm:space-y-2">
+                <div className="h-1.5 sm:h-2 w-full overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-primary transition-all duration-500"
-                    style={{ width: `${Math.min((elapsedSeconds / 60) * 100, 100)}%` }}
+                    className="h-full bg-gradient-to-r from-green-500 via-blue-500 to-green-500 transition-all duration-500 animate-pulse"
+                    style={{
+                      width: `${Math.min((elapsedSeconds / 60) * 100, 95)}%`,
+                      backgroundSize: '200% 100%',
+                    }}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {elapsedSeconds < 30
-                    ? `Waiting for your authorization...`
-                    : `Verifying payment... (${elapsedSeconds}s)`}
+                <div className="flex justify-between items-center text-[10px] sm:text-xs text-muted-foreground">
+                  <span className="flex items-center gap-0.5 sm:gap-1">
+                    <span className="animate-pulse">⏱️</span>
+                    {elapsedSeconds}s
+                  </span>
+                  <span className="flex items-center gap-0.5 sm:gap-1">
+                    {elapsedSeconds < 30 ? (
+                      <>🟢 Waiting</>
+                    ) : elapsedSeconds < 45 ? (
+                      <>🔄 Verifying</>
+                    ) : (
+                      <>⏳ Almost done</>
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Fun facts / tips - hidden on very small screens, compact on mobile */}
+            {step === 'processing' && elapsedSeconds > 15 && (
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 p-2 sm:p-3 text-left">
+                <p className="text-[10px] sm:text-xs text-blue-600 dark:text-blue-400 leading-tight">
+                  💡 <span className="font-medium">Tip:</span>{' '}
+                  {elapsedSeconds < 25
+                    ? 'BodaInsure covers 700K+ riders!'
+                    : elapsedSeconds < 35
+                    ? 'KES 87/day keeps you covered!'
+                    : elapsedSeconds < 45
+                    ? 'Policy delivered within 6 hours!'
+                    : 'M-Pesa is securely processing...'}
                 </p>
               </div>
             )}
 
-            <Button variant="outline" onClick={resetPayment}>
-              Cancel Payment
+            <Button variant="outline" onClick={resetPayment} className="w-full text-xs sm:text-sm h-9 sm:h-10">
+              ❌ Cancel
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Step: Verifying - Auto-refresh in progress after timeout
+  if (step === 'verifying') {
+    return (
+      <div className="flex min-h-[50vh] sm:min-h-[60vh] items-center justify-center px-2 sm:px-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader className="px-3 sm:px-6 py-4 sm:py-6">
+            <div className="mx-auto mb-2 sm:mb-4 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
+              <RefreshCw className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600 dark:text-blue-400 animate-spin" />
+            </div>
+            <CardTitle className="text-base sm:text-xl">🔍 Verifying Payment</CardTitle>
+            <CardDescription className="text-sm">
+              Checking with M-Pesa directly...
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6 pb-4 sm:pb-6">
+            <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 p-3 sm:p-4 text-left">
+              <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
+                ⏱️ Payment confirmation took longer than expected. We&apos;re checking with M-Pesa to get the latest status.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="text-xs sm:text-sm text-muted-foreground">Please wait...</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Step: Delayed - Payment queued for background monitoring
+  if (step === 'delayed') {
+    return (
+      <div className="flex min-h-[50vh] sm:min-h-[60vh] items-center justify-center px-2 sm:px-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader className="px-3 sm:px-6 py-4 sm:py-6">
+            <div className="mx-auto mb-2 sm:mb-4 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-yellow-100 dark:bg-yellow-900">
+              <Clock className="h-6 w-6 sm:h-8 sm:w-8 text-yellow-600 dark:text-yellow-400" />
+            </div>
+            <CardTitle className="text-base sm:text-xl">⏳ Payment Processing Delayed</CardTitle>
+            <CardDescription className="text-sm">
+              Your payment is taking longer than usual to confirm
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6 pb-4 sm:pb-6">
+            {/* What's happening */}
+            <div className="rounded-lg bg-yellow-50 dark:bg-yellow-900/20 p-3 sm:p-4 text-left border border-yellow-200 dark:border-yellow-800">
+              <p className="text-xs sm:text-sm font-medium text-yellow-800 dark:text-yellow-200 flex items-center gap-1.5">
+                <Bell className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                What&apos;s happening:
+              </p>
+              <ul className="mt-1.5 sm:mt-2 space-y-0.5 sm:space-y-1 text-xs sm:text-sm text-yellow-700 dark:text-yellow-300">
+                <li>• M-Pesa confirmation is delayed</li>
+                <li>• We&apos;re monitoring automatically</li>
+                <li>• You&apos;ll be notified when complete</li>
+              </ul>
+            </div>
+
+            {/* What you can do */}
+            <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 p-3 sm:p-4 text-left border border-blue-200 dark:border-blue-800">
+              <p className="text-xs sm:text-sm font-medium text-blue-800 dark:text-blue-200 flex items-center gap-1.5">
+                <HelpCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                What you can do:
+              </p>
+              <ul className="mt-1.5 sm:mt-2 space-y-0.5 sm:space-y-1 text-xs sm:text-sm text-blue-700 dark:text-blue-300">
+                <li>• Check M-Pesa messages for confirmation SMS</li>
+                <li>• If received, click &quot;Check Status&quot; below</li>
+                <li>• If not, wait - we&apos;ll notify you</li>
+              </ul>
+            </div>
+
+            {/* Check status button */}
+            <Button
+              variant="secondary"
+              className="w-full h-9 sm:h-10 text-xs sm:text-sm"
+              onClick={handleRefreshStatus}
+              disabled={isRefreshing}
+            >
+              {isRefreshing ? (
+                <>
+                  <Loader2 className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
+                  Checking with M-Pesa...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                  Check Payment Status
+                </>
+              )}
+            </Button>
+
+            {/* Continue to wallet */}
+            <Button
+              variant="outline"
+              className="w-full h-9 sm:h-10 text-xs sm:text-sm"
+              onClick={() => navigate('/my/wallet')}
+            >
+              📱 Continue to Wallet
+            </Button>
+
+            {/* Make new payment */}
+            <Button
+              variant="ghost"
+              className="w-full h-9 sm:h-10 text-xs sm:text-sm text-muted-foreground"
+              onClick={resetPayment}
+            >
+              Start New Payment
             </Button>
           </CardContent>
         </Card>

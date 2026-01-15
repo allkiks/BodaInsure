@@ -261,7 +261,7 @@ describe('AuthController', () => {
 
   describe('logoutAll', () => {
     it('should call authService.logoutAll and return count', async () => {
-      const user = { id: 'user-123', phone: '+254712345678', role: 'rider' };
+      const user = { userId: 'user-123', phone: '+254712345678', role: 'rider' };
       authService.logoutAll.mockResolvedValue(3);
 
       const result = await controller.logoutAll(user);

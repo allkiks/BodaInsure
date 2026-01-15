@@ -30,6 +30,22 @@ export interface PaymentStatusResponse {
   resultCode?: string | number; // GAP-007: M-Pesa result code for specific error messages
   createdAt: string;
   message?: string;
+  // Enhanced delay info fields
+  isDelayed?: boolean;
+  delaySeconds?: number;
+  recommendedAction?: 'wait' | 'refresh' | 'contact_support';
+}
+
+export interface DetailedPaymentStatusResponse extends PaymentStatusResponse {
+  isDelayed: boolean;
+  delaySeconds?: number;
+  recommendedAction: 'wait' | 'refresh' | 'contact_support';
+}
+
+export interface EnqueueMonitoringResponse {
+  success: boolean;
+  message: string;
+  queuedAt?: string;
 }
 
 export interface PaymentEligibility {
@@ -105,6 +121,28 @@ export const paymentApi = {
   refreshStatus: async (paymentRequestId: string): Promise<PaymentStatusResponse> => {
     const response = await apiClient.post<{ data: PaymentStatusResponse }>(
       `${API_ENDPOINTS.PAYMENTS}/status/${paymentRequestId}/refresh`
+    );
+    return response.data.data;
+  },
+
+  /**
+   * Get detailed payment status with delay information
+   * Includes recommendations for user actions
+   */
+  getDetailedStatus: async (paymentRequestId: string): Promise<DetailedPaymentStatusResponse> => {
+    const response = await apiClient.get<{ data: DetailedPaymentStatusResponse }>(
+      `${API_ENDPOINTS.PAYMENTS}/status/${paymentRequestId}/detailed`
+    );
+    return response.data.data;
+  },
+
+  /**
+   * Enqueue payment for background monitoring
+   * Used when payment exceeds timeout and needs async processing
+   */
+  enqueueForMonitoring: async (paymentRequestId: string): Promise<EnqueueMonitoringResponse> => {
+    const response = await apiClient.post<{ data: EnqueueMonitoringResponse }>(
+      `${API_ENDPOINTS.PAYMENTS}/${paymentRequestId}/enqueue-monitoring`
     );
     return response.data.data;
   },

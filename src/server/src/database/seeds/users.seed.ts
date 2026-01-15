@@ -27,7 +27,7 @@ export const SALT_ROUNDS = 10;
 export const SUPERUSER_CONFIG = {
   username: 'SUPERUSER',
   phone: '+254000000000',
-  role: UserRole.PLATFORM_ADMIN,
+  role: UserRole.SUPERUSER,
   isSystemAccount: true,
   reminderOptOut: true,
 } as const;
@@ -52,6 +52,7 @@ export const COUNTRY_CODE = '+254';
  * - KBA_ADMIN: +254722000002
  * - INSURANCE_ADMIN: +254722000003
  * - PLATFORM_ADMIN: +254722000004
+ * - SUPERUSER: uses special phone +254000000000
  */
 export const ROLE_PHONE_OFFSETS: Record<UserRole, number> = {
   [UserRole.RIDER]: 0,
@@ -59,6 +60,7 @@ export const ROLE_PHONE_OFFSETS: Record<UserRole, number> = {
   [UserRole.KBA_ADMIN]: 2,
   [UserRole.INSURANCE_ADMIN]: 3,
   [UserRole.PLATFORM_ADMIN]: 4,
+  [UserRole.SUPERUSER]: 5,
 };
 
 /**

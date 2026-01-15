@@ -77,7 +77,13 @@
       "Bash(npx vite:*)",
       "Bash(docker-compose:*)",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2NDE5YWFhYS1kZGUxLTQ3MDgtYTI4YS0yNDMxNGRlMGViZTAiLCJwaG9uZSI6IisyNTQwMDAwMDAwMDAiLCJyb2xlIjoicGxhdGZvcm1fYWRtaW4iLCJvcmdhbml6YXRpb25JZCI6bnVsbCwiaWF0IjoxNzY4NDYyNTYxLCJleHAiOjE3NzEwNTQ1NjF9.7rBmDxw1YcIH2q5qP2pYCZMo9TQToABQaQYyhd2DHKs\")",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(tasklist:*)",
+      "Bash(Get-Process -Name \"*ngrok*\")",
+      "Bash(Out-String)",
+      "Bash(powershell \"Get-Process | Where-Object {$_ProcessName -like ''*ngrok*''} | Format-Table ProcessName, Id\")",
+      "WebFetch(domain:4cde5803b856.ngrok-free.app)",
+      "Bash(npx jest:*)"
     ]
   }
 }

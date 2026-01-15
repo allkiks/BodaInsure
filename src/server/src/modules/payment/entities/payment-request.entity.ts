@@ -173,6 +173,12 @@ export class PaymentRequest {
   callbackPayload?: Record<string, unknown>;
 
   /**
+   * Additional metadata (e.g., delayed processing status)
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  metadata?: Record<string, unknown>;
+
+  /**
    * Number of callback retry attempts
    */
   @Column({ name: 'callback_retries', type: 'int', default: 0 })

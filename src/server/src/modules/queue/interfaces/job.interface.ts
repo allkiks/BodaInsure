@@ -60,6 +60,7 @@ export enum PaymentJobType {
   PROCESS_CALLBACK = 'process_callback',
   RECONCILE_PAYMENT = 'reconcile_payment',
   PROCESS_REFUND = 'process_refund',
+  PROCESS_DELAYED_PAYMENT = 'process_delayed_payment',
 }
 
 /**
@@ -219,6 +220,18 @@ export interface RefundJobData extends BaseJobData {
   policyId: string;
   amount: number;
   reason: string;
+}
+
+/**
+ * Delayed payment processing job data
+ * Per M-Pesa Payment Flow Improvements - Phase 4
+ */
+export interface DelayedPaymentJobData extends BaseJobData {
+  type: PaymentJobType.PROCESS_DELAYED_PAYMENT;
+  paymentRequestId: string;
+  attemptCount: number;
+  maxAttempts: number;
+  initialDelaySeconds: number;
 }
 
 /**

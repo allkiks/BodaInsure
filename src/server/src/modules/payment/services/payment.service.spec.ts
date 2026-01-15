@@ -4,9 +4,18 @@ import { Repository, DataSource } from 'typeorm';
 import { PaymentService } from './payment.service.js';
 import { MpesaService } from './mpesa.service.js';
 import { WalletService } from './wallet.service.js';
+import { EscrowService } from '../../accounting/services/escrow.service.js';
+import { PostingEngineService } from '../../accounting/services/posting-engine.service.js';
 import { Transaction, TransactionType, TransactionStatus } from '../entities/transaction.entity.js';
 import { PaymentRequest, PaymentRequestStatus } from '../entities/payment-request.entity.js';
 import { Wallet } from '../entities/wallet.entity.js';
+import { PAYMENT_CONFIG } from '../../../common/constants/index.js';
+
+// Payment amounts from config (works in both dev and prod)
+const DEPOSIT_AMOUNT = PAYMENT_CONFIG.DEPOSIT_AMOUNT;
+const DAILY_AMOUNT = PAYMENT_CONFIG.DAILY_AMOUNT;
+const DEPOSIT_AMOUNT_CENTS = DEPOSIT_AMOUNT * 100;
+const DAILY_AMOUNT_CENTS = DAILY_AMOUNT * 100;
 
 describe('PaymentService', () => {
   let service: PaymentService;
@@ -29,11 +38,12 @@ describe('PaymentService', () => {
     userId: 'user-123',
     status: PaymentRequestStatus.INITIATED,
     paymentType: TransactionType.DEPOSIT,
-    amount: 104800,
+    amount: DEPOSIT_AMOUNT_CENTS,
     phone: '254712345678',
     idempotencyKey: 'test-key',
     daysCount: 1,
-    getAmountInKes: () => 1048,
+    createdAt: new Date(),
+    getAmountInKes: () => DEPOSIT_AMOUNT,
     isSuccessful: () => false,
     isPending: () => true,
   };
@@ -75,6 +85,14 @@ describe('PaymentService', () => {
     transaction: jest.fn(),
   };
 
+  const mockPostingEngineService = {
+    postPaymentReceipt: jest.fn().mockResolvedValue({ success: true, journalEntryId: 'je-123' }),
+  };
+
+  const mockEscrowService = {
+    recordPremiumCollection: jest.fn().mockResolvedValue({ id: 'escrow-123' }),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -84,6 +102,8 @@ describe('PaymentService', () => {
         { provide: MpesaService, useValue: mockMpesaService },
         { provide: WalletService, useValue: mockWalletService },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: PostingEngineService, useValue: mockPostingEngineService },
+        { provide: EscrowService, useValue: mockEscrowService },
       ],
     }).compile();
 
@@ -125,7 +145,7 @@ describe('PaymentService', () => {
         expect(result.checkoutRequestId).toBe('checkout-123');
         expect(mockMpesaService.initiateSTKPush).toHaveBeenCalledWith({
           phone: '0712345678',
-          amount: 1048,
+          amount: DEPOSIT_AMOUNT,
           accountReference: 'BODA-DEPOSIT',
           transactionDesc: 'BodaInsure Dep',
         });
@@ -191,7 +211,7 @@ describe('PaymentService', () => {
         mockPaymentRequestRepository.create.mockReturnValue({
           ...mockPaymentRequest,
           paymentType: TransactionType.DAILY_PAYMENT,
-          amount: 8700,
+          amount: DAILY_AMOUNT_CENTS,
         });
         mockPaymentRequestRepository.save.mockImplementation((req) => Promise.resolve(req));
         mockMpesaService.initiateSTKPush.mockResolvedValue({
@@ -211,7 +231,7 @@ describe('PaymentService', () => {
         expect(result.success).toBe(true);
         expect(mockMpesaService.initiateSTKPush).toHaveBeenCalledWith(
           expect.objectContaining({
-            amount: 87,
+            amount: DAILY_AMOUNT,
           }),
         );
       });
@@ -250,7 +270,7 @@ describe('PaymentService', () => {
         mockPaymentRequestRepository.create.mockReturnValue({
           ...mockPaymentRequest,
           paymentType: TransactionType.DAILY_PAYMENT,
-          amount: 43500, // 5 days * 87 * 100
+          amount: DAILY_AMOUNT_CENTS * 5, // 5 days
           daysCount: 5,
         });
         mockPaymentRequestRepository.save.mockImplementation((req) => Promise.resolve(req));
@@ -272,7 +292,7 @@ describe('PaymentService', () => {
         expect(result.success).toBe(true);
         expect(mockMpesaService.initiateSTKPush).toHaveBeenCalledWith(
           expect.objectContaining({
-            amount: 435, // 5 * 87
+            amount: DAILY_AMOUNT * 5,
           }),
         );
       });
@@ -319,9 +339,12 @@ describe('PaymentService', () => {
       const pendingRequest = {
         ...mockPaymentRequest,
         status: PaymentRequestStatus.SENT,
+        createdAt: new Date(Date.now() - 30000), // 30 seconds ago
       };
       mockPaymentRequestRepository.findOne.mockResolvedValue(pendingRequest);
-      mockPaymentRequestRepository.save.mockImplementation((req) => Promise.resolve(req));
+      mockPaymentRequestRepository.save.mockImplementation((req) =>
+        Promise.resolve({ ...req, callbackReceivedAt: new Date() })
+      );
 
       const result = await service.processCallback({
         merchantRequestId: 'merchant-123',

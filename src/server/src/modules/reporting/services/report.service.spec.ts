@@ -3,6 +3,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ReportService } from './report.service.js';
+import { CashFlowReportService } from './cash-flow-report.service.js';
+import { EncryptionService } from '../../../common/services/encryption.service.js';
 import {
   ReportDefinition,
   ReportType,
@@ -73,6 +75,7 @@ describe('ReportService', () => {
             save: jest.fn(),
             findOne: jest.fn(),
             update: jest.fn(),
+            findAndCount: jest.fn(),
             createQueryBuilder: jest.fn(() => mockQueryBuilder),
           },
         },
@@ -80,6 +83,19 @@ describe('ReportService', () => {
           provide: DataSource,
           useValue: {
             query: jest.fn(),
+          },
+        },
+        {
+          provide: EncryptionService,
+          useValue: {
+            encrypt: jest.fn((val) => `encrypted_${val}`),
+            decrypt: jest.fn((val) => val.replace('encrypted_', '')),
+          },
+        },
+        {
+          provide: CashFlowReportService,
+          useValue: {
+            generateReport: jest.fn().mockResolvedValue({ data: [], summary: {} }),
           },
         },
       ],
@@ -248,22 +264,31 @@ describe('ReportService', () => {
 
   describe('listUserReports', () => {
     it('should list user reports with pagination', async () => {
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([[mockReport], 1]);
+      reportRepository.findAndCount.mockResolvedValue([[mockReport], 1]);
 
       const result = await service.listUserReports('user-1', { page: 1, limit: 20 });
 
       expect(result.reports).toHaveLength(1);
       expect(result.total).toBe(1);
+      expect(reportRepository.findAndCount).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        relations: ['reportDefinition'],
+        order: { createdAt: 'DESC' },
+        skip: 0,
+        take: 20,
+      });
     });
 
     it('should filter by status', async () => {
-      mockQueryBuilder.getManyAndCount.mockResolvedValue([[mockReport], 1]);
+      reportRepository.findAndCount.mockResolvedValue([[mockReport], 1]);
 
       await service.listUserReports('user-1', { status: ReportStatus.COMPLETED });
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith('r.status = :status', {
-        status: ReportStatus.COMPLETED,
-      });
+      expect(reportRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user-1', status: ReportStatus.COMPLETED },
+        }),
+      );
     });
   });
 
@@ -285,7 +310,7 @@ describe('ReportService', () => {
 
       const result = await service.seedDefaultDefinitions();
 
-      expect(result).toBe(5); // 5 default definitions
+      expect(result).toBe(6); // 6 default definitions
     });
 
     it('should skip existing definitions', async () => {

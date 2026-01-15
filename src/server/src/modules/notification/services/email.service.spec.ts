@@ -229,7 +229,7 @@ describe('EmailService', () => {
         expect(mockTransporter.sendMail).toHaveBeenCalledWith(
           expect.objectContaining({
             to: 'john.kamau@example.com',
-            subject: 'Payment Reminder - 3 Days Overdue',
+            subject: 'Payment Reminder - BodaInsure',
           }),
         );
         expect(result.success).toBe(true);

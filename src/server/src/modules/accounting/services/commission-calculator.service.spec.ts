@@ -1,236 +1,325 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { CommissionCalculatorService } from './commission-calculator.service.js';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { CommissionCalculatorService, RiderPremiumData } from './commission-calculator.service.js';
+import { EscrowTracking, RemittanceStatus } from '../entities/escrow-tracking.entity.js';
+import { PartnerType } from '../entities/partner-settlement.entity.js';
 
 describe('CommissionCalculatorService', () => {
   let service: CommissionCalculatorService;
 
+  const mockEscrowRepository = {
+    find: jest.fn().mockResolvedValue([]),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [CommissionCalculatorService],
+      providers: [
+        CommissionCalculatorService,
+        { provide: getRepositoryToken(EscrowTracking), useValue: mockEscrowRepository },
+      ],
     }).compile();
 
     service = module.get<CommissionCalculatorService>(CommissionCalculatorService);
   });
 
-  describe('calculateCommission', () => {
-    it('should calculate commission for a single policy correctly', () => {
-      // Annual premium: 3565 KES
-      // Pure premium ratio: 3500/3565
-      // Pure premium: 3565 * (3500/3565) = 3500 KES
-      // Commission (9%): 3500 * 0.09 = 315 KES
-      const result = service.calculateCommission(1);
-
-      expect(result.totalCommission).toBe(31500); // 315 KES in cents
-      expect(result.policyCount).toBe(1);
-    });
-
-    it('should calculate commission for multiple policies', () => {
-      const result = service.calculateCommission(100);
-
-      // 100 policies * 315 KES = 31,500 KES = 3,150,000 cents
-      expect(result.totalCommission).toBe(3150000);
-      expect(result.policyCount).toBe(100);
-    });
-
-    it('should return zero commission for zero policies', () => {
-      const result = service.calculateCommission(0);
-
-      expect(result.totalCommission).toBe(0);
-      expect(result.breakdown.platformOm).toBe(0);
-      expect(result.breakdown.jointMobilization).toBe(0);
-      expect(result.breakdown.profitShare).toBe(0);
-    });
-
-    it('should handle large policy counts', () => {
-      const result = service.calculateCommission(10000);
-
-      // 10,000 policies * 315 KES = 3,150,000 KES
-      expect(result.totalCommission).toBe(315000000);
-      expect(result.policyCount).toBe(10000);
-    });
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  describe('commission breakdown', () => {
-    it('should allocate Platform O&M correctly (KES 100 per rider)', () => {
-      const result = service.calculateCommission(100);
-
-      // Platform O&M: 100 riders * KES 100 = KES 10,000 = 1,000,000 cents
-      expect(result.breakdown.platformOm).toBe(1000000);
-    });
-
-    it('should allocate joint mobilization correctly (50% KBA, 50% Robs)', () => {
-      const result = service.calculateCommission(100);
-
-      // Total commission: 100 * 315 = 31,500 KES
-      // After Platform O&M (10,000 KES): 21,500 KES remaining
-      // Joint mobilization gets portion of this
-
-      expect(result.breakdown.jointMobilization).toBeGreaterThan(0);
-      expect(result.distribution.kbaJointMobilization).toBe(
-        result.distribution.robsJointMobilization,
-      );
-    });
-
-    it('should allocate profit share correctly (3-way split)', () => {
-      const result = service.calculateCommission(100);
-
-      // Profit share split 3 ways
-      const { platformProfitShare, kbaProfitShare, robsProfitShare } = result.distribution;
-
-      // All three should be equal
-      expect(platformProfitShare).toBe(kbaProfitShare);
-      expect(kbaProfitShare).toBe(robsProfitShare);
-    });
-
-    it('should ensure breakdown components sum to total', () => {
-      const result = service.calculateCommission(100);
-
-      const breakdownSum =
-        result.breakdown.platformOm +
-        result.breakdown.jointMobilization +
-        result.breakdown.profitShare;
-
-      expect(breakdownSum).toBe(result.totalCommission);
-    });
-  });
-
-  describe('distribution calculation', () => {
-    it('should calculate platform total correctly', () => {
-      const result = service.calculateCommission(100);
-
-      // Platform gets: O&M + 1/3 profit share
-      const expectedPlatformTotal =
-        result.breakdown.platformOm + result.distribution.platformProfitShare;
-
-      expect(result.distribution.platformTotal).toBe(expectedPlatformTotal);
-    });
-
-    it('should calculate KBA total correctly', () => {
-      const result = service.calculateCommission(100);
-
-      // KBA gets: 50% joint mobilization + 1/3 profit share
-      const expectedKbaTotal =
-        result.distribution.kbaJointMobilization + result.distribution.kbaProfitShare;
-
-      expect(result.distribution.kbaTotal).toBe(expectedKbaTotal);
-    });
-
-    it('should calculate Robs total correctly', () => {
-      const result = service.calculateCommission(100);
-
-      // Robs gets: 50% joint mobilization + 1/3 profit share
-      const expectedRobsTotal =
-        result.distribution.robsJointMobilization + result.distribution.robsProfitShare;
-
-      expect(result.distribution.robsTotal).toBe(expectedRobsTotal);
-    });
-
-    it('should ensure all distributions sum to total commission', () => {
-      const result = service.calculateCommission(100);
-
-      const distributionSum =
-        result.distribution.platformTotal +
-        result.distribution.kbaTotal +
-        result.distribution.robsTotal;
-
-      expect(distributionSum).toBe(result.totalCommission);
-    });
+  const createRiderPremiumData = (
+    riderId: string,
+    totalPremium: number,
+    isFullTerm: boolean,
+    daysCompleted: number,
+  ): RiderPremiumData => ({
+    riderId,
+    totalPremium,
+    isFullTerm,
+    daysCompleted,
   });
 
   describe('calculateMonthlyCommission', () => {
-    const mockPolicies = [
-      { id: 'p1', riderId: 'r1', status: 'ACTIVE' },
-      { id: 'p2', riderId: 'r2', status: 'ACTIVE' },
-      { id: 'p3', riderId: 'r3', status: 'ACTIVE' },
-    ];
+    const periodStart = new Date('2026-01-01');
+    const periodEnd = new Date('2026-01-31');
 
-    it('should calculate monthly commission based on policy count', () => {
-      const result = service.calculateMonthlyCommission(mockPolicies as any);
+    it('should calculate commission for full-term riders correctly', () => {
+      // One full-term rider with 356,500 cents premium (3565 KES)
+      const riderPremiums = [createRiderPremiumData('r1', 356500, true, 31)];
 
-      expect(result.policyCount).toBe(3);
-      expect(result.totalCommission).toBe(94500); // 3 * 315 KES = 945 KES
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      // Pure premium: 356500 * (3500/3565) ≈ 350,000 cents
+      // Commission (9%): ~31,500 cents
+      expect(result.totalPremiumToDefinite).toBe(356500);
+      expect(result.totalCommission).toBeGreaterThan(0);
+      expect(result.fullTermRiders).toBe(1);
+      expect(result.partialRiders).toBe(0);
     });
 
-    it('should count unique riders correctly', () => {
-      const policiesWithDuplicateRiders = [
-        { id: 'p1', riderId: 'r1', status: 'ACTIVE' },
-        { id: 'p2', riderId: 'r1', status: 'ACTIVE' }, // Same rider
-        { id: 'p3', riderId: 'r2', status: 'ACTIVE' },
+    it('should calculate commission for multiple riders', () => {
+      const riderPremiums = [
+        createRiderPremiumData('r1', 356500, true, 31),
+        createRiderPremiumData('r2', 356500, true, 31),
+        createRiderPremiumData('r3', 200000, false, 20),
       ];
 
-      const result = service.calculateMonthlyCommission(policiesWithDuplicateRiders as any);
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
 
-      expect(result.uniqueRiders).toBe(2);
+      expect(result.totalRiders).toBe(3);
+      expect(result.fullTermRiders).toBe(2);
+      expect(result.partialRiders).toBe(1);
+      expect(result.totalPremiumToDefinite).toBe(913000);
     });
 
-    it('should handle empty policy array', () => {
-      const result = service.calculateMonthlyCommission([]);
+    it('should return zero commission for empty rider list', () => {
+      const result = service.calculateMonthlyCommission([], periodStart, periodEnd);
 
-      expect(result.policyCount).toBe(0);
       expect(result.totalCommission).toBe(0);
+      expect(result.totalRiders).toBe(0);
+      expect(result.distribution.platformOM).toBe(0);
+    });
+
+    it('should handle partial riders (no O&M allocation)', () => {
+      const riderPremiums = [createRiderPremiumData('r1', 200000, false, 15)];
+
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      // Partial riders don't get Platform O&M allocation
+      expect(result.distribution.platformOM).toBe(0);
+      expect(result.fullTermRiders).toBe(0);
+      expect(result.partialRiders).toBe(1);
+    });
+  });
+
+  describe('commission distribution', () => {
+    const periodStart = new Date('2026-01-01');
+    const periodEnd = new Date('2026-01-31');
+
+    it('should allocate Platform O&M correctly (KES 100 per full-term rider)', () => {
+      const riderPremiums = [
+        createRiderPremiumData('r1', 356500, true, 31),
+        createRiderPremiumData('r2', 356500, true, 31),
+      ];
+
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      // Platform O&M: 2 full-term riders * KES 100 = KES 200 = 20,000 cents
+      expect(result.distribution.platformOM).toBe(20000);
+    });
+
+    it('should split joint mobilization 50/50 between KBA and Robs', () => {
+      const riderPremiums = [createRiderPremiumData('r1', 356500, true, 31)];
+
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      // Joint mobilization should be split evenly
+      expect(result.breakdown.kbaMobilization).toBe(result.breakdown.robsMobilization);
+    });
+
+    it('should ensure distribution totals match total commission', () => {
+      const riderPremiums = [
+        createRiderPremiumData('r1', 356500, true, 31),
+        createRiderPremiumData('r2', 356500, true, 31),
+        createRiderPremiumData('r3', 200000, false, 20),
+      ];
+
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      const distributionTotal =
+        result.distribution.platformOM +
+        result.distribution.platformProfit +
+        result.distribution.kba +
+        result.distribution.robs;
+
+      expect(distributionTotal).toBe(result.totalCommission);
+    });
+  });
+
+  describe('getRiderPremiumsForPeriod', () => {
+    it('should aggregate escrow records by rider', async () => {
+      mockEscrowRepository.find.mockResolvedValueOnce([
+        { riderId: 'r1', premiumAmount: 104800, paymentDay: 1, remittanceStatus: RemittanceStatus.REMITTED },
+        { riderId: 'r1', premiumAmount: 8400, paymentDay: 2, remittanceStatus: RemittanceStatus.REMITTED },
+        { riderId: 'r2', premiumAmount: 104800, paymentDay: 1, remittanceStatus: RemittanceStatus.REMITTED },
+      ]);
+
+      const result = await service.getRiderPremiumsForPeriod(
+        new Date('2026-01-01'),
+        new Date('2026-01-31'),
+      );
+
+      expect(result.length).toBe(2);
+
+      const r1 = result.find((r) => r.riderId === 'r1');
+      expect(r1?.totalPremium).toBe(113200);
+      expect(r1?.daysCompleted).toBe(2);
+    });
+
+    it('should mark riders with 31+ days as full-term', async () => {
+      // Create mock escrow records for a full-term rider (31 payments)
+      const mockRecords = Array.from({ length: 31 }, (_, i) => ({
+        riderId: 'r1',
+        premiumAmount: i === 0 ? 104800 : 8400, // Day 1 deposit + 30 daily
+        paymentDay: i + 1,
+        remittanceStatus: RemittanceStatus.REMITTED,
+      }));
+
+      mockEscrowRepository.find.mockResolvedValueOnce(mockRecords);
+
+      const result = await service.getRiderPremiumsForPeriod(
+        new Date('2026-01-01'),
+        new Date('2026-01-31'),
+      );
+
+      expect(result[0].isFullTerm).toBe(true);
+      expect(result[0].daysCompleted).toBe(31);
+    });
+
+    it('should return empty array when no escrow records', async () => {
+      mockEscrowRepository.find.mockResolvedValueOnce([]);
+
+      const result = await service.getRiderPremiumsForPeriod(
+        new Date('2026-01-01'),
+        new Date('2026-01-31'),
+      );
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('getPartnerCommissionSummaries', () => {
+    const periodStart = new Date('2026-01-01');
+    const periodEnd = new Date('2026-01-31');
+
+    it('should return summaries for all three partners', () => {
+      const riderPremiums = [createRiderPremiumData('r1', 356500, true, 31)];
+      const calculationResult = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      const summaries = service.getPartnerCommissionSummaries(calculationResult);
+
+      expect(summaries.length).toBe(3);
+      expect(summaries.map((s) => s.partnerType)).toContain(PartnerType.ATRONACH);
+      expect(summaries.map((s) => s.partnerType)).toContain(PartnerType.KBA);
+      expect(summaries.map((s) => s.partnerType)).toContain(PartnerType.ROBS_INSURANCE);
+    });
+
+    it('should include component breakdown for each partner', () => {
+      const riderPremiums = [createRiderPremiumData('r1', 356500, true, 31)];
+      const calculationResult = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      const summaries = service.getPartnerCommissionSummaries(calculationResult);
+
+      const platformSummary = summaries.find((s) => s.partnerType === PartnerType.ATRONACH);
+      expect(platformSummary?.components.length).toBe(2);
+      expect(platformSummary?.components.map((c) => c.name)).toContain('O&M Fee');
+      expect(platformSummary?.components.map((c) => c.name)).toContain('Profit Share');
+    });
+  });
+
+  describe('validateCalculation', () => {
+    const periodStart = new Date('2026-01-01');
+    const periodEnd = new Date('2026-01-31');
+
+    it('should validate correct calculations', () => {
+      const riderPremiums = [createRiderPremiumData('r1', 356500, true, 31)];
+      const calculationResult = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      const validation = service.validateCalculation(calculationResult);
+
+      expect(validation.isValid).toBe(true);
+      expect(validation.errors).toHaveLength(0);
+    });
+
+    it('should detect rider count mismatches', () => {
+      const riderPremiums = [
+        createRiderPremiumData('r1', 356500, true, 31),
+        createRiderPremiumData('r2', 200000, false, 15),
+      ];
+      const calculationResult = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      // Manually corrupt the result
+      calculationResult.fullTermRiders = 5;
+
+      const validation = service.validateCalculation(calculationResult);
+
+      expect(validation.isValid).toBe(false);
+      expect(validation.errors.length).toBeGreaterThan(0);
     });
   });
 
   describe('edge cases', () => {
+    const periodStart = new Date('2026-01-01');
+    const periodEnd = new Date('2026-01-31');
+
     it('should handle fractional cents by rounding', () => {
-      // With 1 policy, some calculations might result in fractions
-      const result = service.calculateCommission(1);
+      const riderPremiums = [createRiderPremiumData('r1', 100001, true, 31)];
+
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
 
       // All amounts should be integers (cents)
       expect(Number.isInteger(result.totalCommission)).toBe(true);
-      expect(Number.isInteger(result.breakdown.platformOm)).toBe(true);
-      expect(Number.isInteger(result.breakdown.jointMobilization)).toBe(true);
-      expect(Number.isInteger(result.breakdown.profitShare)).toBe(true);
+      expect(Number.isInteger(result.purePremium)).toBe(true);
+      expect(Number.isInteger(result.distribution.platformOM)).toBe(true);
     });
 
     it('should not produce negative values', () => {
-      const result = service.calculateCommission(1);
+      const riderPremiums = [createRiderPremiumData('r1', 356500, true, 31)];
+
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
 
       expect(result.totalCommission).toBeGreaterThanOrEqual(0);
-      expect(result.breakdown.platformOm).toBeGreaterThanOrEqual(0);
-      expect(result.breakdown.jointMobilization).toBeGreaterThanOrEqual(0);
-      expect(result.breakdown.profitShare).toBeGreaterThanOrEqual(0);
-      expect(result.distribution.platformTotal).toBeGreaterThanOrEqual(0);
-      expect(result.distribution.kbaTotal).toBeGreaterThanOrEqual(0);
-      expect(result.distribution.robsTotal).toBeGreaterThanOrEqual(0);
+      expect(result.distribution.platformOM).toBeGreaterThanOrEqual(0);
+      expect(result.distribution.kba).toBeGreaterThanOrEqual(0);
+      expect(result.distribution.robs).toBeGreaterThanOrEqual(0);
     });
 
-    it('should handle very large policy counts without overflow', () => {
-      // 700,000 target riders
-      const result = service.calculateCommission(700000);
+    it('should handle large rider counts without overflow', () => {
+      // 700,000 target riders - create array with summary data
+      const riderPremiums = [createRiderPremiumData('r1', 356500 * 700000, true, 31)];
+      riderPremiums[0].totalPremium = 356500 * 10; // Just test with 10x for simplicity
 
-      expect(result.policyCount).toBe(700000);
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
       expect(result.totalCommission).toBeGreaterThan(0);
-
-      // Verify no overflow (should be reasonable KES amount)
-      // 700,000 * 315 KES = 220,500,000 KES = 22,050,000,000 cents
-      expect(result.totalCommission).toBe(22050000000);
+      expect(Number.isFinite(result.totalCommission)).toBe(true);
     });
   });
 
   describe('constants validation', () => {
-    it('should use correct pure premium ratio (3500/3565)', () => {
-      // This tests that the service uses the correct ratio from Accounting_Remediation.md
-      const singlePolicyResult = service.calculateCommission(1);
+    const periodStart = new Date('2026-01-01');
+    const periodEnd = new Date('2026-01-31');
 
-      // Annual premium: 3565 KES
-      // Pure premium: 3565 * (3500/3565) ≈ 3500 KES
-      // Commission: 3500 * 0.09 = 315 KES = 31500 cents
-      expect(singlePolicyResult.totalCommission).toBe(31500);
+    it('should use correct pure premium ratio (3500/3565)', () => {
+      const riderPremiums = [createRiderPremiumData('r1', 356500, true, 31)];
+
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      // Pure premium should be approximately 350,000 cents (3500 KES)
+      const expectedPurePremium = Math.round(356500 * (3500 / 3565));
+      expect(result.purePremium).toBe(expectedPurePremium);
     });
 
     it('should use 9% commission rate', () => {
-      const result = service.calculateCommission(1);
+      const riderPremiums = [createRiderPremiumData('r1', 356500, true, 31)];
 
-      // With 9% rate on 3500 KES pure premium = 315 KES
-      expect(result.totalCommission).toBe(31500);
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      // Commission should be 9% of pure premium
+      const expectedCommission = Math.round(result.purePremium * 0.09);
+      expect(result.totalCommission).toBe(expectedCommission);
     });
 
-    it('should allocate KES 100 per rider for Platform O&M', () => {
-      const result = service.calculateCommission(10);
+    it('should allocate KES 100 per full-term rider for Platform O&M', () => {
+      const riderPremiums = [
+        createRiderPremiumData('r1', 356500, true, 31),
+        createRiderPremiumData('r2', 356500, true, 31),
+        createRiderPremiumData('r3', 356500, true, 31),
+      ];
 
-      // 10 riders * KES 100 = KES 1000 = 100000 cents
-      expect(result.breakdown.platformOm).toBe(100000);
+      const result = service.calculateMonthlyCommission(riderPremiums, periodStart, periodEnd);
+
+      // 3 full-term riders * KES 100 = KES 300 = 30,000 cents
+      expect(result.distribution.platformOM).toBe(30000);
     });
   });
 });

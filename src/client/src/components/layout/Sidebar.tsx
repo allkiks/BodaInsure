@@ -19,6 +19,8 @@ import {
   FileSearch,
   TrendingUp,
   Activity,
+  Calendar,
+  Banknote,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useMemo } from 'react';
@@ -90,6 +92,18 @@ const adminNavItems: NavItem[] = [
     label: 'Audit Log',
     path: '/admin/audit',
     icon: <Activity className="h-5 w-5" />,
+    roles: ['platform_admin', 'insurance_admin'],
+  },
+  {
+    label: 'Scheduler',
+    path: '/admin/scheduler',
+    icon: <Calendar className="h-5 w-5" />,
+    roles: ['platform_admin'],
+  },
+  {
+    label: 'Refunds',
+    path: '/admin/refunds',
+    icon: <Banknote className="h-5 w-5" />,
     roles: ['platform_admin', 'insurance_admin'],
   },
   {

@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { OrganizationService } from './organization.service.js';
 import {
@@ -8,6 +8,7 @@ import {
   OrganizationType,
   OrganizationStatus,
 } from '../entities/organization.entity.js';
+import { EncryptionService } from '../../../common/services/encryption.service.js';
 
 describe('OrganizationService', () => {
   let service: OrganizationService;
@@ -43,6 +44,19 @@ describe('OrganizationService', () => {
     getRawMany: jest.fn(),
   };
 
+  const mockDataSource = {
+    transaction: jest.fn((cb) => cb({
+      findOne: jest.fn(),
+      save: jest.fn(),
+    })),
+    query: jest.fn().mockResolvedValue([]),
+  };
+
+  const mockEncryptionService = {
+    encrypt: jest.fn((val) => `encrypted_${val}`),
+    decrypt: jest.fn((val) => val.replace('encrypted_', '')),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -58,6 +72,14 @@ describe('OrganizationService', () => {
             count: jest.fn(),
             createQueryBuilder: jest.fn(() => mockQueryBuilder),
           },
+        },
+        {
+          provide: DataSource,
+          useValue: mockDataSource,
+        },
+        {
+          provide: EncryptionService,
+          useValue: mockEncryptionService,
         },
       ],
     }).compile();

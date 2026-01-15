@@ -293,6 +293,30 @@ export function getRefundPostingLines(
 }
 
 /**
+ * Get posting lines for refund payout to rider
+ *
+ * When the refund is actually paid out to the rider (M-Pesa B2C):
+ * Debit:  2101 Refund Payable to Riders (reduce liability)
+ * Credit: 1002 Cash at Bank - Platform Operating (cash leaves)
+ *
+ * @param refundAmountCents - The 90% amount going to rider
+ */
+export function getRefundPayoutPostingLines(refundAmountCents: number): PostingLine[] {
+  return [
+    {
+      accountCode: GL_ACCOUNTS.REFUND_PAYABLE_RIDERS,
+      debitAmount: refundAmountCents,
+      description: 'Refund paid to rider - clearing liability',
+    },
+    {
+      accountCode: GL_ACCOUNTS.CASH_PLATFORM_OPERATING,
+      creditAmount: refundAmountCents,
+      description: 'Cash paid out for rider refund',
+    },
+  ];
+}
+
+/**
  * Get the journal entry type for a payment type
  */
 export function getJournalEntryTypeForPayment(

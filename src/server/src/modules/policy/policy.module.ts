@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 
@@ -10,16 +10,23 @@ import {
   PolicyTerms,
   PolicyTermsAcknowledgment,
 } from './entities/policy-terms.entity.js';
+import { RiderRefund } from './entities/rider-refund.entity.js';
 
 // Services
 import { PdfGenerationService } from './services/pdf-generation.service.js';
 import { BatchProcessingService } from './services/batch-processing.service.js';
 import { PolicyService } from './services/policy.service.js';
 import { PolicyTermsService } from './services/policy-terms.service.js';
+import { RefundService } from './services/refund.service.js';
 
 // Controllers
 import { PolicyController, PolicyBatchController } from './controllers/policy.controller.js';
 import { PolicyTermsController } from './controllers/policy-terms.controller.js';
+import { RefundController } from './controllers/refund.controller.js';
+
+// External Modules
+import { AccountingModule } from '../accounting/accounting.module.js';
+import { PaymentModule } from '../payment/payment.module.js';
 
 /**
  * Policy Module
@@ -36,21 +43,26 @@ import { PolicyTermsController } from './controllers/policy-terms.controller.js'
       PolicyBatch,
       PolicyTerms,
       PolicyTermsAcknowledgment,
+      RiderRefund,
     ]),
     ConfigModule,
+    forwardRef(() => AccountingModule),
+    forwardRef(() => PaymentModule),
   ],
-  controllers: [PolicyController, PolicyBatchController, PolicyTermsController],
+  controllers: [PolicyController, PolicyBatchController, PolicyTermsController, RefundController],
   providers: [
     PdfGenerationService,
     BatchProcessingService,
     PolicyService,
     PolicyTermsService,
+    RefundService,
   ],
   exports: [
     PolicyService,
     BatchProcessingService,
     PdfGenerationService,
     PolicyTermsService,
+    RefundService,
   ],
 })
 export class PolicyModule {}

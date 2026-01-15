@@ -11,13 +11,18 @@ import {
   Language,
   Gender,
 } from '../entities/user.entity';
+import { Organization, OrganizationType, OrganizationStatus } from '../../organization/entities/organization.entity';
+import { Membership } from '../../organization/entities/membership.entity';
 
 describe('UserService', () => {
   let service: UserService;
   let userRepository: jest.Mocked<Repository<User>>;
+  let organizationRepository: jest.Mocked<Repository<Organization>>;
+  let membershipRepository: jest.Mocked<Repository<Membership>>;
 
   const mockPhone = '+254712345678';
   const mockUserId = 'user-uuid-123';
+  const mockOrgId = 'org-uuid-123';
 
   const createMockUser = (overrides: Partial<User> = {}): User =>
     ({
@@ -34,8 +39,16 @@ describe('UserService', () => {
       ...overrides,
     }) as User;
 
+  const createMockOrganization = (): Partial<Organization> => ({
+    id: mockOrgId,
+    name: 'Test SACCO',
+    type: OrganizationType.SACCO,
+    status: OrganizationStatus.ACTIVE,
+    parentId: 'parent-org-uuid', // SACCOs must have a parent umbrella body for riders
+  });
+
   beforeEach(async () => {
-    const mockRepository = {
+    const mockUserRepository = {
       create: jest.fn(),
       save: jest.fn(),
       findOne: jest.fn(),
@@ -44,18 +57,38 @@ describe('UserService', () => {
       softDelete: jest.fn(),
     };
 
+    const mockOrganizationRepository = {
+      findOne: jest.fn(),
+    };
+
+    const mockMembershipRepository = {
+      create: jest.fn(),
+      save: jest.fn(),
+      findOne: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
         {
           provide: getRepositoryToken(User),
-          useValue: mockRepository,
+          useValue: mockUserRepository,
+        },
+        {
+          provide: getRepositoryToken(Organization),
+          useValue: mockOrganizationRepository,
+        },
+        {
+          provide: getRepositoryToken(Membership),
+          useValue: mockMembershipRepository,
         },
       ],
     }).compile();
 
     service = module.get<UserService>(UserService);
     userRepository = module.get(getRepositoryToken(User));
+    organizationRepository = module.get(getRepositoryToken(Organization));
+    membershipRepository = module.get(getRepositoryToken(Membership));
   });
 
   afterEach(() => {
@@ -67,15 +100,23 @@ describe('UserService', () => {
       phone: '0712345678',
       language: Language.SWAHILI,
       termsAccepted: true,
+      organizationId: mockOrgId,
     };
 
-    it('should create a new user successfully', async () => {
+    const setupSuccessfulCreateMocks = () => {
       userRepository.findOne.mockResolvedValue(null);
       userRepository.create.mockImplementation((data) => ({
         id: mockUserId,
         ...data,
       }) as User);
       userRepository.save.mockImplementation((user) => Promise.resolve(user as User));
+      organizationRepository.findOne.mockResolvedValue(createMockOrganization() as Organization);
+      membershipRepository.create.mockImplementation((data) => data as Membership);
+      membershipRepository.save.mockImplementation((m) => Promise.resolve(m as Membership));
+    };
+
+    it('should create a new user successfully', async () => {
+      setupSuccessfulCreateMocks();
 
       const result = await service.createUser(createUserData);
 
@@ -87,14 +128,9 @@ describe('UserService', () => {
     });
 
     it('should normalize phone number to E.164 format', async () => {
-      userRepository.findOne.mockResolvedValue(null);
-      userRepository.create.mockImplementation((data) => ({
-        id: mockUserId,
-        ...data,
-      }) as User);
-      userRepository.save.mockImplementation((user) => Promise.resolve(user as User));
+      setupSuccessfulCreateMocks();
 
-      await service.createUser({ phone: '0712345678', termsAccepted: true });
+      await service.createUser({ phone: '0712345678', termsAccepted: true, organizationId: mockOrgId });
 
       expect(userRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ phone: '+254712345678' }),
@@ -103,6 +139,9 @@ describe('UserService', () => {
 
     it('should set terms and consent timestamps when accepted', async () => {
       userRepository.findOne.mockResolvedValue(null);
+      organizationRepository.findOne.mockResolvedValue(createMockOrganization() as Organization);
+      membershipRepository.create.mockImplementation((data) => data as Membership);
+      membershipRepository.save.mockImplementation((m) => Promise.resolve(m as Membership));
 
       let createdUser: Partial<User> | null = null;
       userRepository.create.mockImplementation((data) => {
@@ -114,6 +153,7 @@ describe('UserService', () => {
       await service.createUser({
         phone: mockPhone,
         termsAccepted: true,
+        organizationId: mockOrgId,
       });
 
       expect(createdUser!.termsAcceptedAt).toBeDefined();
@@ -122,6 +162,7 @@ describe('UserService', () => {
 
     it('should throw ConflictException for duplicate phone', async () => {
       userRepository.findOne.mockResolvedValue(createMockUser());
+      organizationRepository.findOne.mockResolvedValue(createMockOrganization() as Organization);
 
       await expect(service.createUser(createUserData)).rejects.toThrow(
         ConflictException,
@@ -132,14 +173,9 @@ describe('UserService', () => {
     });
 
     it('should default language to English if not provided', async () => {
-      userRepository.findOne.mockResolvedValue(null);
-      userRepository.create.mockImplementation((data) => ({
-        id: mockUserId,
-        ...data,
-      }) as User);
-      userRepository.save.mockImplementation((user) => Promise.resolve(user as User));
+      setupSuccessfulCreateMocks();
 
-      await service.createUser({ phone: mockPhone, termsAccepted: true });
+      await service.createUser({ phone: mockPhone, termsAccepted: true, organizationId: mockOrgId });
 
       expect(userRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ language: Language.ENGLISH }),

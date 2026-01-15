@@ -1,4 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
+
+// Mock uuid before importing UssdService
+jest.mock('uuid', () => ({
+  v4: jest.fn(() => 'mock-uuid-123'),
+}));
+
 import { UssdService, UssdProvider, UssdRequest } from './ussd.service.js';
 import { UserService } from '../../identity/services/user.service.js';
 import { WalletService } from '../../payment/services/wallet.service.js';
@@ -6,6 +12,12 @@ import { PaymentService } from '../../payment/services/payment.service.js';
 import { PolicyService } from '../../policy/services/policy.service.js';
 import { Language } from '../../identity/entities/user.entity.js';
 import { PolicyStatus } from '../../policy/entities/policy.entity.js';
+import { PAYMENT_CONFIG } from '../../../common/constants/index.js';
+
+// Helper to format KES amounts with commas (matches service output)
+const formatKes = (amount: number): string => {
+  return amount.toLocaleString('en-KE');
+};
 
 describe('UssdService', () => {
   let service: UssdService;
@@ -21,17 +33,26 @@ describe('UssdService', () => {
     language: Language.ENGLISH,
   };
 
-  // Mock payment progress
+  // Calculate amounts based on PAYMENT_CONFIG (works in both dev and prod)
+  const depositAmount = PAYMENT_CONFIG.DEPOSIT_AMOUNT;
+  const dailyAmount = PAYMENT_CONFIG.DAILY_AMOUNT;
+  const totalDailyPayments = PAYMENT_CONFIG.TOTAL_DAILY_PAYMENTS;
+  const sevenDaysAmount = dailyAmount * 7;
+  const totalRequired = depositAmount + (dailyAmount * totalDailyPayments);
+  const totalPaidFor13Days = depositAmount + (dailyAmount * 13);
+  const progressPercentage = Math.round((totalPaidFor13Days / totalRequired) * 100);
+
+  // Mock payment progress - using config values
   const mockPaymentProgress = {
     depositCompleted: true,
-    depositAmount: 1048,
+    depositAmount: depositAmount,
     dailyPaymentsCount: 13,
     dailyPaymentsRemaining: 17,
     dailyPaymentsCompleted: false,
-    dailyAmount: 87,
-    totalPaid: 2179,
-    totalRequired: 3658,
-    progressPercentage: 60,
+    dailyAmount: dailyAmount,
+    totalPaid: totalPaidFor13Days,
+    totalRequired: totalRequired,
+    progressPercentage: progressPercentage,
     policy1Eligible: true,
     policy2Eligible: false,
   };
@@ -45,7 +66,7 @@ describe('UssdService', () => {
     coverageStart: new Date('2024-12-01'),
     coverageEnd: new Date('2025-01-01'),
     daysUntilExpiry: 18,
-    premiumAmount: 1048,
+    premiumAmount: depositAmount,
     isActive: true,
     documentAvailable: true,
   };
@@ -105,7 +126,7 @@ describe('UssdService', () => {
       success: true,
       paymentRequestId: 'req-123',
       checkoutRequestId: 'checkout-123',
-      amount: 87,
+      amount: dailyAmount,
       message: 'Payment initiated',
     });
   });
@@ -170,7 +191,7 @@ describe('UssdService', () => {
 
         expect(response.endSession).toBe(false);
         expect(response.message).toContain('Your Balance');
-        expect(response.message).toContain('Total Paid: KES 2,179');
+        expect(response.message).toContain(`Total Paid: KES ${formatKes(totalPaidFor13Days)}`);
         expect(response.message).toContain('Daily Payments: 13/30');
         expect(response.message).toContain('0. Back');
         expect(walletService.getPaymentProgress).toHaveBeenCalledWith('user-123');
@@ -185,8 +206,8 @@ describe('UssdService', () => {
 
         expect(response.endSession).toBe(false);
         expect(response.message).toContain('Make Payment');
-        expect(response.message).toContain('1. 1 day (KES 87)');
-        expect(response.message).toContain('2. 7 days (KES 609)');
+        expect(response.message).toContain(`1. 1 day (KES ${formatKes(dailyAmount)})`);
+        expect(response.message).toContain(`2. 7 days (KES ${formatKes(sevenDaysAmount)})`);
         expect(response.message).toContain('3. All remaining');
       });
 
@@ -283,7 +304,7 @@ describe('UssdService', () => {
         );
 
         expect(confirmScreen.message).toContain('Confirm Payment');
-        expect(confirmScreen.message).toContain('KES 87');
+        expect(confirmScreen.message).toContain(`KES ${formatKes(dailyAmount)}`);
         expect(confirmScreen.message).toContain('1. Confirm');
 
         // 4. Confirm payment
@@ -325,7 +346,7 @@ describe('UssdService', () => {
           createRequest(sessionId, phone, '2'),
         );
 
-        expect(confirmScreen.message).toContain('KES 609');
+        expect(confirmScreen.message).toContain(`KES ${formatKes(sevenDaysAmount)}`);
       });
 
       it('should prompt for deposit if not completed', async () => {
@@ -347,7 +368,7 @@ describe('UssdService', () => {
         );
 
         expect(response.message).toContain('deposit');
-        expect(response.message).toContain('KES 1,048');
+        expect(response.message).toContain(`KES ${formatKes(depositAmount)}`);
       });
 
       it('should show all payments complete message', async () => {

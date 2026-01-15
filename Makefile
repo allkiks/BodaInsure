@@ -27,7 +27,8 @@ PROJECT_NAME := bodainsure
 
 .PHONY: help dev-setup dev-docker dev-docker-build dev-docker-up dev-docker-down dev-docker-logs \
         dev-docker-restart dev-docker-clean dev-docker-tools dev-migrate dev-shell-server \
-        dev-shell-client dev-test dev-lint check-env
+        dev-shell-client dev-test dev-lint check-env dev-docker-unit-tests dev-unit-tests \
+        dev-docker-unit-tests-watch dev-unit-tests-refund
 
 # Default target
 .DEFAULT_GOAL := help
@@ -242,6 +243,36 @@ dev-test-e2e: ## Run e2e tests in the server container
 dev-test-cov: ## Run tests with coverage
 	@echo "Running tests with coverage..."
 	$(DOCKER_COMPOSE) exec server npm run test:cov
+
+dev-docker-unit-tests: ## Run unit tests in Docker with verbose output
+	@echo "=========================================="
+	@echo "  Running Unit Tests in Docker"
+	@echo "=========================================="
+	@echo ""
+	$(DOCKER_COMPOSE) exec server npm run test -- --verbose --no-cache
+	@echo ""
+	@echo "=========================================="
+	@echo "  Unit Tests Complete"
+	@echo "=========================================="
+
+dev-unit-tests: ## Run unit tests locally (outside Docker)
+	@echo "=========================================="
+	@echo "  Running Unit Tests Locally"
+	@echo "=========================================="
+	@echo ""
+	cd src/server && npm run test -- --verbose --no-cache
+	@echo ""
+	@echo "=========================================="
+	@echo "  Unit Tests Complete"
+	@echo "=========================================="
+
+dev-docker-unit-tests-watch: ## Run unit tests in Docker with watch mode
+	@echo "Running unit tests in watch mode (Docker)..."
+	$(DOCKER_COMPOSE) exec server npm run test:watch
+
+dev-unit-tests-refund: ## Run refund-specific unit tests
+	@echo "Running refund service unit tests..."
+	$(DOCKER_COMPOSE) exec server npm run test -- --testPathPattern=refund.service.spec --verbose
 
 dev-lint: ## Run linting in server and client containers
 	@echo "Running linting..."

@@ -3,12 +3,16 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, LessThan } from 'typeorm';
 import { Policy, PolicyType, PolicyStatus } from '../entities/policy.entity.js';
 import { PolicyDocument, DocumentStatus } from '../entities/policy-document.entity.js';
 import { BatchProcessingService, PolicyIssuanceRequest } from './batch-processing.service.js';
+import { RefundService } from './refund.service.js';
+import { RiderRefund } from '../entities/rider-refund.entity.js';
 
 /**
  * Policy summary for display
@@ -58,6 +62,8 @@ export class PolicyService {
     @InjectRepository(PolicyDocument)
     private readonly documentRepository: Repository<PolicyDocument>,
     private readonly batchProcessingService: BatchProcessingService,
+    @Inject(forwardRef(() => RefundService))
+    private readonly refundService: RefundService,
   ) {}
 
   /**
@@ -308,15 +314,22 @@ export class PolicyService {
   /**
    * Cancel a policy with optional refund
    * Per CR-IRA-002: Full refund during 30-day free look period
+   *
+   * Integration with Accounting:
+   * - Creates journal entries for refund via PostingEngineService
+   * - Creates RiderRefund record for payout tracking
+   * - Rider receives 90% refund, 10% is reversal fee
    */
   async cancelPolicy(
     policyId: string,
     userId: string,
     reason: string,
+    payoutPhone?: string,
   ): Promise<{
     policy: Policy;
     refundEligible: boolean;
     refundAmount: number;
+    refund?: RiderRefund;
     message: string;
   }> {
     const policy = await this.policyRepository.findOne({
@@ -333,7 +346,27 @@ export class PolicyService {
 
     // Check free look period per CR-IRA-002
     const withinFreeLook = this.isWithinFreeLookPeriod(policy);
-    const refundAmount = withinFreeLook ? policy.getPremiumInKes() : 0;
+    const premiumAmountKes = policy.getPremiumInKes();
+    const premiumAmountCents = Number(policy.premiumAmount);
+
+    // Calculate days paid (estimate based on policy type)
+    // Day 1 = 1 day, Daily payments = based on premium / 87 KES
+    let daysPaid = 1;
+    if (policy.policyType === PolicyType.ELEVEN_MONTH) {
+      // 11-month policy means 30 days of payments completed
+      daysPaid = 30;
+    } else {
+      // Estimate from premium amount (87 KES per day after Day 1)
+      const dailyRate = 8700; // 87 KES in cents
+      if (premiumAmountCents > 104800) { // More than Day 1 deposit
+        daysPaid = 1 + Math.floor((premiumAmountCents - 104800) / dailyRate);
+      }
+    }
+
+    // Calculate refund amounts (rider gets 90%)
+    const refundAmountKes = withinFreeLook
+      ? Math.floor(premiumAmountKes * 0.9)
+      : 0;
 
     policy.status = PolicyStatus.CANCELLED;
     policy.cancelledAt = new Date();
@@ -341,29 +374,54 @@ export class PolicyService {
     policy.metadata = {
       ...policy.metadata,
       cancelledWithinFreeLook: withinFreeLook,
-      refundAmount: refundAmount,
+      refundAmount: refundAmountKes,
       freeLookPeriodDays: this.FREE_LOOK_PERIOD_DAYS,
+      daysPaid,
     };
 
     await this.policyRepository.save(policy);
 
-    this.logger.log(
-      `Policy cancelled: ${policy.policyNumber ?? policy.id} ` +
-      `freeLook=${withinFreeLook} refund=${refundAmount} KES`
-    );
-
+    let refund: RiderRefund | undefined;
     let message: string;
-    if (withinFreeLook) {
+
+    if (withinFreeLook && premiumAmountCents > 0) {
+      // Create refund record and journal entries
+      refund = await this.refundService.createRefund({
+        userId,
+        policyId,
+        originalAmountCents: premiumAmountCents,
+        daysPaid,
+        cancellationReason: reason,
+        payoutPhone,
+      });
+
+      policy.metadata = {
+        ...policy.metadata,
+        refundId: refund.id,
+        refundNumber: refund.refundNumber,
+      };
+      await this.policyRepository.save(policy);
+
       message = `Policy cancelled within ${this.FREE_LOOK_PERIOD_DAYS}-day free look period. ` +
-        `A full refund of KES ${refundAmount} will be processed.`;
+        `Refund of KES ${refundAmountKes} (90%) initiated. Refund #${refund.refundNumber}`;
+
+      this.logger.log(
+        `Policy cancelled with refund: ${policy.policyNumber ?? policy.id} ` +
+        `refund=${refund.refundNumber} amount=${refundAmountKes} KES`
+      );
     } else {
       message = 'Policy cancelled. No refund available as free look period has expired.';
+
+      this.logger.log(
+        `Policy cancelled (no refund): ${policy.policyNumber ?? policy.id}`
+      );
     }
 
     return {
       policy,
       refundEligible: withinFreeLook,
-      refundAmount,
+      refundAmount: refundAmountKes,
+      refund,
       message,
     };
   }
