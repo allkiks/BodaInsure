@@ -17,6 +17,7 @@ import {
   BASE_PHONE_NUMBER,
   COUNTRY_CODE,
 } from '../../../database/seeds/index.js';
+import { SimpleProgress } from '../../../common/utils/progress.util.js';
 
 /**
  * Seeded User Information
@@ -80,26 +81,44 @@ export class SeederService {
   /**
    * Run user seeding
    * Called by SeedingRunnerService
+   *
+   * Progress visibility:
+   * - Shows progress for SUPERUSER and each role user
+   * - Indicates whether users are created, restored, or already exist
    */
   async seed(): Promise<UserSeedingResult> {
-    this.logger.log('Starting user seeding...');
+    const progress = new SimpleProgress('UserSeeder');
     this.seededUsers = [];
 
     try {
       // Seed SUPERUSER (system account)
+      progress.start('Seeding SUPERUSER account');
       await this.seedSuperuser();
+      const superuserResult = this.seededUsers.find(u => u.username === SUPERUSER_CONFIG.username);
+      if (superuserResult?.created) {
+        progress.complete('SUPERUSER created');
+      } else if (superuserResult?.restored) {
+        progress.complete('SUPERUSER restored');
+      } else {
+        progress.skip('SUPERUSER', 'already exists');
+      }
 
       // Seed one user per role with deterministic phone numbers
+      progress.start('Seeding role-based users');
       await this.seedRoleUsers();
-
-      // Display seed results
-      this.displaySeedResults();
 
       const createdCount = this.seededUsers.filter(u => u.created).length;
       const restoredCount = this.seededUsers.filter(u => u.restored).length;
       const existingCount = this.seededUsers.filter(u => !u.created && !u.restored).length;
 
-      this.logger.log('User seeding completed successfully');
+      if (createdCount > 0) {
+        progress.complete('Role users seeded', `${createdCount} created, ${existingCount} existing`);
+      } else {
+        progress.skip('Role users', `all ${existingCount} users exist`);
+      }
+
+      // Display seed results
+      this.displaySeedResults();
 
       return {
         success: true,
@@ -111,7 +130,7 @@ export class SeederService {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error('User seeding failed', error);
+      progress.fail('User seeding failed', errorMessage);
       return {
         success: false,
         seededCount: 0,

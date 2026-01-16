@@ -12,6 +12,11 @@
  * Exit codes:
  *   0 - Seeding completed successfully
  *   1 - Seeding failed
+ *
+ * Progress Visibility:
+ *   - Step-by-step progress with status indicators
+ *   - Shows current action being executed
+ *   - Displays detailed summary with counts
  */
 
 import { NestFactory } from '@nestjs/core';
@@ -21,49 +26,56 @@ import { SeedingRunnerService } from '../../modules/seeding/seeding-runner.servi
 
 const logger = new Logger('SeedRunner');
 
+/**
+ * Format timestamp for logging
+ */
+function getTimestamp(): string {
+  return new Date().toISOString().split('T')[1].split('.')[0];
+}
+
+/**
+ * Log with timestamp
+ */
+function log(message: string): void {
+  console.log(`[${getTimestamp()}] [SeedRunner] ${message}`);
+}
+
 async function runSeeds(): Promise<void> {
-  logger.log('');
-  logger.log('╔══════════════════════════════════════════════════════════════╗');
-  logger.log('║           BODAINSURE DATABASE SEEDING                         ║');
-  logger.log('╚══════════════════════════════════════════════════════════════╝');
-  logger.log('');
+  const startTime = Date.now();
+
+  log('Starting database seeding process');
+  log('');
 
   try {
     // Create a standalone NestJS application context
+    log('⏳ Initializing NestJS context...');
     const app = await NestFactory.createApplicationContext(SeedingRunnerModule, {
       logger: ['error', 'warn', 'log'],
     });
+    log('✓ NestJS context initialized');
+    log('');
 
     // Get the seeding runner service
     const seedingRunner = app.get(SeedingRunnerService);
 
-    // Run all seeds
+    // Run all seeds (progress is handled by SeedingRunnerService)
     const result = await seedingRunner.runAllSeeds();
-
-    // Display summary
-    logger.log('');
-    logger.log('╔══════════════════════════════════════════════════════════════╗');
-    logger.log('║           SEEDING SUMMARY                                     ║');
-    logger.log('╠══════════════════════════════════════════════════════════════╣');
-    logger.log(`║  Users seeded:         ${String(result.usersSeeded).padEnd(37)}║`);
-    logger.log(`║  Organizations seeded: ${String(result.organizationsSeeded).padEnd(37)}║`);
-    logger.log(`║  Policy terms seeded:  ${String(result.policyTermsSeeded).padEnd(37)}║`);
-    logger.log(`║  GL accounts seeded:   ${String(result.glAccountsSeeded).padEnd(37)}║`);
-    logger.log(`║  Test policies seeded: ${String(result.testPoliciesSeeded).padEnd(37)}║`);
-    logger.log(`║  Duration:             ${result.durationMs}ms${' '.repeat(Math.max(0, 34 - String(result.durationMs).length))}║`);
-    logger.log('╠══════════════════════════════════════════════════════════════╣');
-    logger.log(`║  Status: ${result.success ? 'SUCCESS ✓' : 'FAILED ✗'}${' '.repeat(result.success ? 49 : 50)}║`);
-    logger.log('╚══════════════════════════════════════════════════════════════╝');
-    logger.log('');
 
     // Clean up
     await app.close();
 
-    if (!result.success) {
-      process.exit(1);
+    // Final status
+    const totalDuration = Date.now() - startTime;
+    if (result.success) {
+      log(`✓ Seeding completed successfully in ${totalDuration}ms`);
+    } else {
+      log(`✗ Seeding completed with errors in ${totalDuration}ms`);
     }
+
+    process.exit(result.success ? 0 : 1);
   } catch (error) {
-    logger.error('Seeding failed with error:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`✗ Seeding failed: ${errorMessage}`);
     process.exit(1);
   }
 }

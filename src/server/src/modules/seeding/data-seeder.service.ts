@@ -37,6 +37,7 @@ import {
   CHART_OF_ACCOUNTS_SUMMARY,
   getNormalBalanceForType,
 } from '../../database/seeds/index.js';
+import { SimpleProgress } from '../../common/utils/progress.util.js';
 
 /**
  * Data seeding result
@@ -88,9 +89,13 @@ export class DataSeederService {
   /**
    * Run data seeding
    * Called by SeedingRunnerService
+   *
+   * Progress visibility:
+   * - Displays each seeding step with status indicators
+   * - Shows whether data was created or already exists
    */
   async seed(): Promise<DataSeedingResult> {
-    this.logger.log('Starting configuration data seeding...');
+    const progress = new SimpleProgress('DataSeeder');
 
     let organizationsSeeded = 0;
     let policyTermsSeeded = 0;
@@ -100,34 +105,61 @@ export class DataSeederService {
     let templatesSeeded = 0;
 
     try {
-      // Seed organizations
+      // Step 1: Seed organizations
+      progress.start('Seeding organizations (KBA + SACCOs)');
       const orgResult = await this.seedOrganizations();
       organizationsSeeded = orgResult;
+      if (orgResult > 0) {
+        progress.complete('Organizations seeded', `${orgResult} created`);
+      } else {
+        progress.skip('Organizations', 'already exist');
+      }
 
-      // Seed policy terms
+      // Step 2: Seed policy terms
+      progress.start('Seeding policy terms (TPO)');
       const termsResult = await this.seedPolicyTerms();
       policyTermsSeeded = termsResult;
+      if (termsResult > 0) {
+        progress.complete('Policy terms seeded', `${termsResult} created`);
+      } else {
+        progress.skip('Policy terms', 'already exist');
+      }
 
-      // Map users to organizations
-      const mappingResult = await this.mapUsersToOrganizations();
-      usersMapped = mappingResult;
-
-      // Seed Chart of Accounts (GL accounts)
+      // Step 3: Seed Chart of Accounts (GL accounts)
+      progress.start('Seeding GL accounts (Chart of Accounts)');
       const glResult = await this.seedChartOfAccounts();
       glAccountsSeeded = glResult;
+      if (glResult > 0) {
+        progress.complete('GL accounts seeded', `${glResult} created`);
+      } else {
+        progress.skip('GL accounts', 'already exist');
+      }
 
-      // Seed notification templates
+      // Step 4: Seed notification templates
+      progress.start('Seeding notification templates (SMS + Email)');
       const templateResult = await this.seedNotificationTemplates();
       templatesSeeded = templateResult;
+      if (templateResult > 0) {
+        progress.complete('Templates seeded', `${templateResult} created`);
+      } else {
+        progress.skip('Templates', 'already exist');
+      }
+
+      // Step 5: Map users to organizations
+      progress.start('Mapping users to organizations');
+      const mappingResult = await this.mapUsersToOrganizations();
+      usersMapped = mappingResult;
+      if (mappingResult > 0) {
+        progress.complete('User mappings created', `${mappingResult} memberships`);
+      } else {
+        progress.skip('User mappings', 'already exist');
+      }
 
       // NOTE: Test policies are NOT seeded because:
       // - Riders start with PENDING KYC status
       // - Riders cannot make payments until KYC is APPROVED
       // - No payments = no policies
-      // To test policies, complete KYC for a rider first, then make a payment
       testPoliciesSeeded = 0;
-
-      this.logger.log('Configuration data seeding completed');
 
       return {
         success: true,
@@ -140,7 +172,7 @@ export class DataSeederService {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error('Configuration data seeding failed', error);
+      progress.fail('Configuration seeding failed', errorMessage);
       return {
         success: false,
         organizationsSeeded,

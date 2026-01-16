@@ -85,7 +85,8 @@
       "WebFetch(domain:4cde5803b856.ngrok-free.app)",
       "Bash(npx jest:*)",
       "Bash(pushd:*)",
-      "Bash(popd)"
+      "Bash(popd)",
+      "Bash(wc:*)"
     ]
   }
 }

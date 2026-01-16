@@ -21,14 +21,19 @@ WAIT := docker run --rm alpine sleep
 
 # Configuration
 DOCKER_COMPOSE_FILE := docker/dev/docker-compose.yml
+DOCKER_COMPOSE_NGROK := docker/dev/docker-compose.ngrok.yml
 ENV_FILE := .env.docker
+# Main compose command with orphan removal to handle ngrok in separate compose file
 DOCKER_COMPOSE := docker compose -f $(DOCKER_COMPOSE_FILE) --env-file $(ENV_FILE)
+# ngrok uses separate project name (defined in compose file) to avoid orphan warnings
+DOCKER_COMPOSE_NGROK_CMD := docker compose -f $(DOCKER_COMPOSE_NGROK) --env-file $(ENV_FILE)
 PROJECT_NAME := bodainsure
 
 .PHONY: help dev-setup dev-docker dev-docker-build dev-docker-up dev-docker-down dev-docker-logs \
         dev-docker-restart dev-docker-clean dev-docker-tools dev-migrate dev-shell-server \
         dev-shell-client dev-test dev-lint check-env dev-docker-unit-tests dev-unit-tests \
-        dev-docker-unit-tests-watch dev-unit-tests-refund
+        dev-docker-unit-tests-watch dev-unit-tests-refund dev-ngrok dev-ngrok-down dev-ngrok-logs \
+        dev-ngrok-url
 
 # Default target
 .DEFAULT_GOAL := help
@@ -58,6 +63,12 @@ help: ## Display this help message
 	@echo "  dev-shell-server    Open server shell"
 	@echo "  dev-shell-client    Open client shell"
 	@echo "  dev-status          Show container status"
+	@echo ""
+	@echo "ngrok (M-Pesa Callbacks):"
+	@echo "  dev-ngrok           Start ngrok tunnel (separate from main stack)"
+	@echo "  dev-ngrok-url       Get the ngrok public URL"
+	@echo "  dev-ngrok-logs      View ngrok logs"
+	@echo "  dev-ngrok-down      Stop ngrok tunnel"
 	@echo ""
 
 ##@ Setup
@@ -108,16 +119,18 @@ dev-docker: check-env ## Start the full Docker development environment (builds, 
 	@echo "  Build complete!"
 	@echo ""
 	@echo "[3/5] Starting infrastructure services..."
-	@$(DOCKER_COMPOSE) up -d --wait postgres redis minio mailhog minio-init >/dev/null 2>&1 || (echo "  Infrastructure starting..." && $(WAIT) 10)
+	@$(DOCKER_COMPOSE) up -d --wait --remove-orphans postgres redis minio mailhog minio-init >/dev/null 2>&1 || (echo "  Infrastructure starting..." && $(WAIT) 10)
 	@echo "  Infrastructure ready!"
 	@echo ""
 	@echo "[4/5] Starting application services..."
-	@echo "  Starting server (migrations and seeding may take 30-60 seconds on first run)..."
-	$(DOCKER_COMPOSE) up -d server
+	@echo "  Starting server (migrations and seeding may take 60-120 seconds on first run)..."
+	$(DOCKER_COMPOSE) up -d --remove-orphans server
+	@echo "  Waiting for server to be healthy..."
+	@$(WAIT) 60
 	@echo "  Starting client..."
-	$(DOCKER_COMPOSE) up -d client
+	$(DOCKER_COMPOSE) up -d --remove-orphans client
 	@echo "  Waiting for services to be ready..."
-	@$(WAIT) 30
+	@$(WAIT) 15
 	@echo ""
 	@echo "[5/5] Environment Ready!"
 	@echo ""
@@ -158,7 +171,7 @@ dev-docker-build: ## Build all Docker images
 
 dev-docker-up: ## Start all services (without rebuild)
 	@echo "Starting all services..."
-	$(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE) up -d --remove-orphans
 	@echo ""
 	@echo "Services started. Run 'make dev-docker-logs' to view logs."
 
@@ -197,6 +210,61 @@ dev-docker-tools: ## Start optional development tools (pgAdmin, Redis Commander)
 	@echo "Development tools started:"
 	@echo "  pgAdmin:         http://localhost:8080 (admin@bodainsure.co.ke / admin123)"
 	@echo "  Redis Commander: http://localhost:8081"
+
+##@ ngrok (M-Pesa Callbacks)
+
+dev-ngrok: check-env ## Start ngrok tunnel for M-Pesa callbacks
+	@echo "=========================================="
+	@echo "  Starting ngrok Tunnel"
+	@echo "=========================================="
+	@echo ""
+	@echo "Checking NGROK_AUTHTOKEN..."
+	@grep -q "NGROK_AUTHTOKEN=." $(ENV_FILE) || (echo "Error: NGROK_AUTHTOKEN not set in $(ENV_FILE)" && echo "Get your token from: https://dashboard.ngrok.com/get-started/your-authtoken" && exit 1)
+	@echo "  NGROK_AUTHTOKEN found"
+	@echo ""
+	@echo "Starting ngrok container..."
+	$(DOCKER_COMPOSE_NGROK_CMD) up -d
+	@echo ""
+	@echo "Waiting for ngrok to start..."
+	@$(WAIT) 3
+	@echo ""
+	@echo "=========================================="
+	@echo "  ngrok Tunnel Started"
+	@echo "=========================================="
+	@echo ""
+	@echo "  Web Interface: http://localhost:4040"
+	@echo ""
+	@echo "  To get your public URL:"
+	@echo "    make dev-ngrok-url"
+	@echo ""
+	@echo "  Update .env.docker with the ngrok URL:"
+	@echo "    MPESA_CALLBACK_URL=https://<ngrok-url>/api/v1/payments/mpesa/callback"
+	@echo "    MPESA_B2C_RESULT_URL=https://<ngrok-url>/api/v1/payments/mpesa/b2c/result"
+	@echo "    MPESA_B2C_TIMEOUT_URL=https://<ngrok-url>/api/v1/payments/mpesa/b2c/timeout"
+	@echo ""
+
+dev-ngrok-url: ## Get the ngrok public URL
+	@echo "ngrok Public URL:"
+	@echo ""
+	@curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -o '"public_url":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "Error: ngrok is not running. Run 'make dev-ngrok' first."
+	@echo ""
+
+dev-ngrok-logs: ## View ngrok logs
+	$(DOCKER_COMPOSE_NGROK_CMD) logs -f
+
+dev-ngrok-down: ## Stop ngrok tunnel
+	@echo "Stopping ngrok tunnel..."
+	$(DOCKER_COMPOSE_NGROK_CMD) down
+	@echo "ngrok stopped."
+
+dev-ngrok-restart: ## Restart ngrok tunnel
+	@echo "Restarting ngrok tunnel..."
+	$(DOCKER_COMPOSE_NGROK_CMD) restart
+	@$(WAIT) 3
+	@echo ""
+	@echo "ngrok restarted. New URL:"
+	@curl -s http://localhost:4040/api/tunnels 2>/dev/null | grep -o '"public_url":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "Waiting for ngrok..."
+	@echo ""
 
 ##@ Database
 
