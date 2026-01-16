@@ -70,9 +70,17 @@ export class NotificationTemplate {
   @Column({ type: 'varchar', length: 255, nullable: true })
   subject?: string;
 
-  /** Message body template with {{variables}} */
+  /** Message body template with {{variables}} (plain text for SMS, text fallback for email) */
   @Column({ type: 'text' })
   body!: string;
+
+  /** HTML body template for email (with {{variables}}) */
+  @Column({ name: 'html_body', type: 'text', nullable: true })
+  htmlBody?: string;
+
+  /** Email preview text (shown in email client preview) */
+  @Column({ name: 'preview_text', type: 'varchar', length: 200, nullable: true })
+  previewText?: string;
 
   /** Required variables for this template */
   @Column({ name: 'required_variables', type: 'jsonb', default: '[]' })
@@ -136,6 +144,29 @@ export class NotificationTemplate {
     }
 
     return rendered;
+  }
+
+  /**
+   * Render HTML body with variables (for email templates)
+   */
+  renderHtmlBody(variables: Record<string, string | number>): string | undefined {
+    if (!this.htmlBody) return undefined;
+
+    let rendered = this.htmlBody;
+
+    for (const [key, value] of Object.entries(variables)) {
+      const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+      rendered = rendered.replace(regex, String(value));
+    }
+
+    return rendered;
+  }
+
+  /**
+   * Check if this is an email template with HTML support
+   */
+  hasHtmlBody(): boolean {
+    return this.channel === NotificationChannel.EMAIL && !!this.htmlBody;
   }
 
   /**

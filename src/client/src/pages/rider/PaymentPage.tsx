@@ -423,7 +423,8 @@ export default function PaymentPage() {
 
     // Get current message based on elapsed time (changes every 3 seconds)
     const messageIndex = Math.floor(elapsedSeconds / 3) % progressMessages.length;
-    const currentMessage = progressMessages[messageIndex];
+    // Using non-null assertion as the modulo operation guarantees a valid index
+    const currentMessage = progressMessages[messageIndex]!;
 
     // Determine current phase and messaging based on polling progress
     const getPhaseInfo = () => {

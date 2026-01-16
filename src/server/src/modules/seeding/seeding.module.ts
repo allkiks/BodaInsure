@@ -7,6 +7,7 @@ import { PolicyTerms } from '../policy/entities/policy-terms.entity.js';
 import { Policy } from '../policy/entities/policy.entity.js';
 import { User } from '../identity/entities/user.entity.js';
 import { GlAccount } from '../accounting/entities/gl-account.entity.js';
+import { NotificationTemplate } from '../notification/entities/notification-template.entity.js';
 import { DataSeederService } from './data-seeder.service.js';
 import { SeederService } from '../identity/services/seeder.service.js';
 import { IdentityModule } from '../identity/identity.module.js';
@@ -41,7 +42,7 @@ import { IdentityModule } from '../identity/identity.module.js';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Organization, Membership, PolicyTerms, Policy, User, GlAccount]),
+    TypeOrmModule.forFeature([Organization, Membership, PolicyTerms, Policy, User, GlAccount, NotificationTemplate]),
     IdentityModule, // For SeederService (user seeding)
   ],
   providers: [DataSeederService],

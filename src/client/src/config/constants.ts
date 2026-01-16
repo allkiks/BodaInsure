@@ -121,6 +121,14 @@ export const API_ENDPOINTS = {
   REFUNDS_APPROVED: '/refunds/approved',
   REFUNDS_STATS: '/refunds/stats',
 
+  // Templates
+  TEMPLATES: '/templates',
+  TEMPLATES_GROUPED: '/templates/grouped',
+  TEMPLATES_SEED: '/templates/seed',
+  TEMPLATES_ENUM_CHANNELS: '/templates/enum/channels',
+  TEMPLATES_ENUM_TYPES: '/templates/enum/types',
+  TEMPLATES_ENUM_STATUSES: '/templates/enum/statuses',
+
   // Settings
   SETTINGS: '/settings',
 } as const;
@@ -226,5 +234,6 @@ export const NAV_ITEMS = [
   { label: 'Organizations', path: '/organizations', icon: 'Building2' },
   { label: 'KYC Review', path: '/kyc', icon: 'FileCheck' },
   { label: 'Reports', path: '/reports', icon: 'FileText' },
+  { label: 'Templates', path: '/admin/templates', icon: 'Mail' },
   { label: 'Settings', path: '/settings', icon: 'Settings' },
 ] as const;

@@ -83,7 +83,9 @@
       "Bash(Out-String)",
       "Bash(powershell \"Get-Process | Where-Object {$_ProcessName -like ''*ngrok*''} | Format-Table ProcessName, Id\")",
       "WebFetch(domain:4cde5803b856.ngrok-free.app)",
-      "Bash(npx jest:*)"
+      "Bash(npx jest:*)",
+      "Bash(pushd:*)",
+      "Bash(popd)"
     ]
   }
 }

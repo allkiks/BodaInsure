@@ -128,7 +128,8 @@ describe('EmailService', () => {
     });
 
     it('should handle send failure gracefully', async () => {
-      mockTransporter.sendMail.mockRejectedValueOnce(new Error('SMTP error'));
+      // Reject all attempts including retries
+      mockTransporter.sendMail.mockRejectedValue(new Error('SMTP error'));
 
       const result = await service.send({
         to: 'test@example.com',
@@ -138,7 +139,11 @@ describe('EmailService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('SMTP error');
-    });
+
+      // Reset mock to default behavior for subsequent tests
+      mockTransporter.sendMail.mockReset();
+      mockTransporter.sendMail.mockResolvedValue({ messageId: 'test-message-id' });
+    }, 30000); // Increased timeout to account for retry delays
   });
 
   describe('BodaInsure-specific email methods', () => {
@@ -426,6 +431,185 @@ describe('EmailService', () => {
       expect(status).toHaveProperty('enabled');
       expect(status).toHaveProperty('connected');
     });
+  });
+});
+
+describe('EmailService - Recipient Verification Tests', () => {
+  let service: EmailService;
+  let mockTransporter: { sendMail: jest.Mock; verify: jest.Mock };
+
+  const mockConfigService = {
+    get: jest.fn((key: string, defaultValue?: unknown) => {
+      const config: Record<string, unknown> = {
+        EMAIL_ENABLED: true,
+        EMAIL_FROM: 'BodaInsure <noreply@bodainsure.co.ke>',
+        EMAIL_REPLY_TO: 'support@bodainsure.co.ke',
+        SMTP_HOST: 'smtp.example.com',
+        SMTP_PORT: 587,
+        SMTP_USER: 'testuser',
+        SMTP_PASS: 'testpass',
+        SMTP_SECURE: false,
+      };
+      return config[key] ?? defaultValue;
+    }),
+  };
+
+  beforeEach(async () => {
+    mockTransporter = {
+      sendMail: jest.fn().mockResolvedValue({ messageId: 'test-email-id-456' }),
+      verify: jest.fn().mockResolvedValue(true),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        EmailService,
+        {
+          provide: ConfigService,
+          useValue: mockConfigService,
+        },
+      ],
+    }).compile();
+
+    service = module.get<EmailService>(EmailService);
+    (service as unknown as { transporter: typeof mockTransporter }).transporter =
+      mockTransporter;
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  /**
+   * Test: Verify email request is issued to recipient allan.kkoech@gmail.com
+   * This test uses mocks - no real emails are sent in CI/test environments
+   */
+  it('should verify email request is issued to recipient allan.kkoech@gmail.com', async () => {
+    const recipientEmail = 'allan.kkoech@gmail.com';
+    const testSubject = 'Test Email Verification';
+    const testContent = 'This is a test email to verify recipient address handling';
+
+    const result = await service.send({
+      to: recipientEmail,
+      subject: testSubject,
+      text: testContent,
+      html: `<p>${testContent}</p>`,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.messageId).toBeDefined();
+    expect(mockTransporter.sendMail).toHaveBeenCalledTimes(1);
+    expect(mockTransporter.sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: recipientEmail,
+        subject: testSubject,
+        text: testContent,
+        html: `<p>${testContent}</p>`,
+        from: 'BodaInsure <noreply@bodainsure.co.ke>',
+        replyTo: 'support@bodainsure.co.ke',
+      }),
+    );
+  });
+
+  it('should send welcome email to allan.kkoech@gmail.com with correct template', async () => {
+    const recipientEmail = 'allan.kkoech@gmail.com';
+    const recipientName = 'Allan Kkoech';
+
+    const result = await service.sendWelcomeEmail(recipientEmail, recipientName);
+
+    expect(result.success).toBe(true);
+    expect(mockTransporter.sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: recipientEmail,
+        subject: 'Welcome to BodaInsure!',
+      }),
+    );
+
+    // Verify HTML contains the recipient name
+    const sentEmail = mockTransporter.sendMail.mock.calls[0][0];
+    expect(sentEmail.html).toContain(recipientName);
+    expect(sentEmail.text).toContain(recipientName);
+  });
+
+  it('should send payment confirmation to allan.kkoech@gmail.com with transaction details', async () => {
+    const recipientEmail = 'allan.kkoech@gmail.com';
+    const paymentData = {
+      name: 'Allan Kkoech',
+      amount: 87,
+      transactionId: 'TXN-AUDIT-TEST-001',
+      paymentDate: new Date('2024-12-15'),
+      walletBalance: 2610,
+      daysRemaining: 25,
+    };
+
+    const result = await service.sendPaymentConfirmation(recipientEmail, paymentData);
+
+    expect(result.success).toBe(true);
+    expect(mockTransporter.sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: recipientEmail,
+        subject: 'Payment Received - KES 87',
+      }),
+    );
+
+    // Verify transaction ID is included
+    const sentEmail = mockTransporter.sendMail.mock.calls[0][0];
+    expect(sentEmail.html).toContain(paymentData.transactionId);
+    expect(sentEmail.text).toContain(paymentData.transactionId);
+  });
+
+  it('should include allan.kkoech@gmail.com as CC recipient', async () => {
+    const primaryRecipient = 'primary@example.com';
+    const ccRecipient = 'allan.kkoech@gmail.com';
+
+    await service.send({
+      to: primaryRecipient,
+      subject: 'Test with CC',
+      text: 'Testing CC functionality',
+      cc: ccRecipient,
+    });
+
+    expect(mockTransporter.sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: primaryRecipient,
+        cc: ccRecipient,
+      }),
+    );
+  });
+
+  it('should correctly construct email payload with all fields', async () => {
+    const emailRequest = {
+      to: 'allan.kkoech@gmail.com',
+      subject: 'Complete Email Payload Test',
+      text: 'Plain text version',
+      html: '<h1>HTML version</h1>',
+      from: 'Custom Sender <custom@bodainsure.co.ke>',
+      replyTo: 'custom-reply@bodainsure.co.ke',
+      cc: 'cc@example.com',
+      bcc: 'bcc@example.com',
+      attachments: [
+        {
+          filename: 'test-document.pdf',
+          content: Buffer.from('PDF test content'),
+          contentType: 'application/pdf',
+        },
+      ],
+    };
+
+    await service.send(emailRequest);
+
+    expect(mockTransporter.sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: emailRequest.to,
+        subject: emailRequest.subject,
+        text: emailRequest.text,
+        html: emailRequest.html,
+        from: emailRequest.from,
+        replyTo: emailRequest.replyTo,
+        cc: emailRequest.cc,
+        bcc: emailRequest.bcc,
+        attachments: emailRequest.attachments,
+      }),
+    );
   });
 });
 

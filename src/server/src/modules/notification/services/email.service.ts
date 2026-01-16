@@ -1,7 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import { AuditService } from '../../audit/services/audit.service.js';
+import { AuditEventType } from '../../audit/entities/audit-event.entity.js';
+
+/**
+ * Email validation regex (RFC 5322 simplified)
+ */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Email send request
@@ -21,6 +28,10 @@ export interface EmailSendRequest {
     path?: string;
     contentType?: string;
   }>;
+  /** User ID for audit logging */
+  userId?: string;
+  /** Skip validation (for internal use) */
+  skipValidation?: boolean;
 }
 
 /**
@@ -30,6 +41,7 @@ export interface EmailSendResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  retryCount?: number;
 }
 
 /**
@@ -37,6 +49,24 @@ export interface EmailSendResult {
  */
 export interface EmailTemplateData {
   [key: string]: string | number | boolean | Date | undefined;
+}
+
+/**
+ * Validate email address format
+ * Per GAP-E05: Email validation
+ */
+export function isValidEmail(email: string): boolean {
+  return EMAIL_REGEX.test(email);
+}
+
+/**
+ * Mask email for logging (show first 3 chars + domain)
+ */
+export function maskEmail(email: string): string {
+  const parts = email.split('@');
+  if (parts.length !== 2) return '***';
+  const local = parts[0].substring(0, 3) + '***';
+  return `${local}@${parts[1]}`;
 }
 
 /**
@@ -48,6 +78,11 @@ export interface EmailTemplateData {
  * - MailHog (development)
  * - Template-based emails
  * - Attachments for policy documents
+ *
+ * Enhanced with:
+ * - GAP-E02: Audit logging integration
+ * - GAP-E03: Retry logic with exponential backoff
+ * - GAP-E05: Email address validation
  */
 @Injectable()
 export class EmailService {
@@ -56,8 +91,14 @@ export class EmailService {
   private readonly enabled: boolean;
   private readonly defaultFrom: string;
   private readonly defaultReplyTo: string;
+  private readonly maxRetries: number;
+  private readonly retryDelayMs: number;
+  private readonly smtpHost: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() @Inject(AuditService) private readonly auditService?: AuditService,
+  ) {
     this.enabled = this.configService.get<boolean>('EMAIL_ENABLED', false);
     this.defaultFrom = this.configService.get<string>(
       'EMAIL_FROM',
@@ -68,25 +109,33 @@ export class EmailService {
       'support@bodainsure.co.ke',
     );
 
+    // Retry configuration (GAP-E03)
+    this.maxRetries = this.configService.get<number>('EMAIL_MAX_RETRIES', 3);
+    this.retryDelayMs = this.configService.get<number>('EMAIL_RETRY_DELAY_MS', 1000);
+
     // Configure SMTP transport
-    const smtpHost = this.configService.get<string>('SMTP_HOST', 'localhost');
+    this.smtpHost = this.configService.get<string>('SMTP_HOST', 'localhost');
     const smtpPort = this.configService.get<number>('SMTP_PORT', 1025);
     const smtpUser = this.configService.get<string>('SMTP_USER');
     const smtpPass = this.configService.get<string>('SMTP_PASS');
-    const smtpSecure = this.configService.get<boolean>('SMTP_SECURE', false);
+    const smtpSecure = this.configService.get<string>('SMTP_SECURE', 'false');
+
+    // Handle STARTTLS vs true/false
+    const isSecure = smtpSecure === 'true' || smtpSecure === 'STARTTLS';
 
     this.transporter = nodemailer.createTransport({
-      host: smtpHost,
+      host: this.smtpHost,
       port: smtpPort,
-      secure: smtpSecure,
+      secure: smtpSecure === 'true', // Only true if explicitly "true", not STARTTLS
       auth: smtpUser && smtpPass
         ? {
             user: smtpUser,
             pass: smtpPass,
           }
         : undefined,
-      // For development with MailHog
-      ignoreTLS: !smtpSecure,
+      // For development with MailHog or STARTTLS
+      ignoreTLS: !isSecure,
+      tls: smtpSecure === 'STARTTLS' ? { rejectUnauthorized: false } : undefined,
     });
 
     if (!this.enabled) {
@@ -95,7 +144,11 @@ export class EmailService {
   }
 
   /**
-   * Send an email
+   * Send an email with validation, retry logic, and audit logging
+   *
+   * Per GAP-E02: Audit logging integration
+   * Per GAP-E03: Retry logic with exponential backoff
+   * Per GAP-E05: Email address validation
    */
   async send(request: EmailSendRequest): Promise<EmailSendResult> {
     const {
@@ -108,45 +161,201 @@ export class EmailService {
       cc,
       bcc,
       attachments,
+      userId,
+      skipValidation,
     } = request;
 
+    // Normalize recipients to array
+    const recipients = Array.isArray(to) ? to : [to];
+    const maskedRecipients = recipients.map(maskEmail).join(', ');
+
+    // GAP-E05: Validate email addresses
+    if (!skipValidation) {
+      const invalidEmails = recipients.filter((email) => !isValidEmail(email));
+      if (invalidEmails.length > 0) {
+        const errorMessage = `Invalid email address(es): ${invalidEmails.map(maskEmail).join(', ')}`;
+        this.logger.warn(errorMessage);
+
+        // Log audit event for validation failure
+        await this.logAuditEvent(
+          AuditEventType.EMAIL_FAILED,
+          userId,
+          maskedRecipients,
+          subject,
+          errorMessage,
+        );
+
+        return {
+          success: false,
+          error: errorMessage,
+        };
+      }
+    }
+
+    // Handle disabled mode
     if (!this.enabled) {
-      this.logger.debug(`Email disabled. Would send: to=${Array.isArray(to) ? to.join(',') : to} subject="${subject}"`);
+      this.logger.debug(
+        `Email disabled. Would send: to=${maskedRecipients} subject="${subject}"`,
+      );
       return {
         success: true,
         messageId: `dev-email-${Date.now()}`,
       };
     }
 
-    try {
-      const result = await this.transporter.sendMail({
-        from,
-        to: Array.isArray(to) ? to.join(', ') : to,
-        cc: cc ? (Array.isArray(cc) ? cc.join(', ') : cc) : undefined,
-        bcc: bcc ? (Array.isArray(bcc) ? bcc.join(', ') : bcc) : undefined,
-        replyTo,
-        subject,
-        text,
-        html,
-        attachments,
-      });
+    // GAP-E03: Retry logic with exponential backoff
+    let lastError: string | undefined;
+    let retryCount = 0;
 
-      this.logger.log(
-        `Email sent: to=${Array.isArray(to) ? to[0] : to} subject="${subject}" messageId=${result.messageId}`,
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        const result = await this.transporter.sendMail({
+          from,
+          to: recipients.join(', '),
+          cc: cc ? (Array.isArray(cc) ? cc.join(', ') : cc) : undefined,
+          bcc: bcc ? (Array.isArray(bcc) ? bcc.join(', ') : bcc) : undefined,
+          replyTo,
+          subject,
+          text,
+          html,
+          attachments,
+        });
+
+        this.logger.log(
+          `Email sent: to=${maskedRecipients} subject="${subject}" messageId=${result.messageId}${retryCount > 0 ? ` (after ${retryCount} retries)` : ''}`,
+        );
+
+        // GAP-E02: Log audit event for success
+        await this.logAuditEvent(
+          AuditEventType.EMAIL_SENT,
+          userId,
+          maskedRecipients,
+          subject,
+          undefined,
+          result.messageId,
+        );
+
+        return {
+          success: true,
+          messageId: result.messageId,
+          retryCount,
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        retryCount = attempt;
+
+        // Check if error is retryable
+        if (!this.isRetryableError(lastError) || attempt >= this.maxRetries) {
+          break;
+        }
+
+        // Exponential backoff delay
+        const delay = this.retryDelayMs * Math.pow(2, attempt);
+        this.logger.warn(
+          `Email send attempt ${attempt + 1} failed: ${lastError}. Retrying in ${delay}ms...`,
+        );
+        await this.sleep(delay);
+      }
+    }
+
+    // All retries exhausted or non-retryable error
+    this.logger.error(
+      `Email send failed after ${retryCount + 1} attempts: ${lastError}`,
+    );
+
+    // GAP-E02: Log audit event for failure
+    await this.logAuditEvent(
+      AuditEventType.EMAIL_FAILED,
+      userId,
+      maskedRecipients,
+      subject,
+      lastError,
+    );
+
+    return {
+      success: false,
+      error: lastError,
+      retryCount,
+    };
+  }
+
+  /**
+   * Check if an error is retryable
+   */
+  private isRetryableError(error: string): boolean {
+    const nonRetryablePatterns = [
+      'invalid email',
+      'invalid address',
+      'recipient rejected',
+      'user unknown',
+      'mailbox not found',
+      'authentication failed',
+      'relay denied',
+    ];
+
+    const lowerError = error.toLowerCase();
+    return !nonRetryablePatterns.some((pattern) => lowerError.includes(pattern));
+  }
+
+  /**
+   * Sleep for specified milliseconds
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Log audit event (GAP-E02)
+   */
+  private async logAuditEvent(
+    eventType: AuditEventType,
+    userId: string | undefined,
+    recipient: string,
+    subject: string,
+    error?: string,
+    messageId?: string,
+  ): Promise<void> {
+    if (!this.auditService) {
+      // Audit service not available, log to console instead
+      this.logger.debug(
+        JSON.stringify({
+          audit: true,
+          eventType,
+          provider: this.smtpHost,
+          recipient,
+          subject,
+          messageId,
+          error,
+          timestamp: new Date().toISOString(),
+        }),
       );
+      return;
+    }
 
-      return {
-        success: true,
-        messageId: result.messageId,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Email send failed: ${errorMessage}`);
-
-      return {
-        success: false,
-        error: errorMessage,
-      };
+    try {
+      await this.auditService.log({
+        eventType,
+        userId,
+        entityType: 'email',
+        description: error
+          ? `Email failed to ${recipient}: ${error}`
+          : `Email sent to ${recipient}`,
+        details: {
+          recipient,
+          subject,
+          messageId,
+          provider: this.smtpHost,
+          error,
+        },
+        outcome: error ? 'failure' : 'success',
+        errorMessage: error,
+        channel: 'notification',
+      });
+    } catch (auditError) {
+      // Don't let audit logging failure break email sending
+      this.logger.warn(
+        `Failed to log audit event: ${auditError instanceof Error ? auditError.message : String(auditError)}`,
+      );
     }
   }
 

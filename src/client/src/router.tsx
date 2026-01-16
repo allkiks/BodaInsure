@@ -39,6 +39,7 @@ const AdminUserDetailPage = lazy(() => import('@/pages/admin/UserDetailPage'));
 const AuditLogPage = lazy(() => import('@/pages/admin/AuditLogPage'));
 const SchedulerPage = lazy(() => import('@/pages/admin/SchedulerPage'));
 const RefundsPage = lazy(() => import('@/pages/admin/RefundsPage'));
+const TemplatesPage = lazy(() => import('@/pages/admin/TemplatesPage'));
 
 // Accounting pages
 const AccountingDashboard = lazy(() => import('@/pages/accounting/AccountingDashboard'));
@@ -300,6 +301,11 @@ export function AppRouter() {
           <Route path="admin/refunds" element={
             <ProtectedRoute allowedRoles={['platform_admin', 'insurance_admin']}>
               <RefundsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="admin/templates" element={
+            <ProtectedRoute allowedRoles={['platform_admin']}>
+              <TemplatesPage />
             </ProtectedRoute>
           } />
 

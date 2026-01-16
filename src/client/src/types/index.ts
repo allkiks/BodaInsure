@@ -441,6 +441,83 @@ export interface CashFlowReportMetadata {
   isCashFlowReport: boolean;
 }
 
+// Notification Template types
+export type NotificationChannel = 'SMS' | 'EMAIL' | 'WHATSAPP' | 'PUSH';
+export type NotificationType =
+  | 'OTP'
+  | 'PAYMENT_RECEIVED'
+  | 'PAYMENT_REMINDER'
+  | 'POLICY_ISSUED'
+  | 'POLICY_EXPIRING'
+  | 'POLICY_EXPIRED'
+  | 'POLICY_LAPSED'
+  | 'KYC_APPROVED'
+  | 'KYC_REJECTED'
+  | 'WELCOME'
+  | 'ACCOUNT_SUSPENDED'
+  | 'GENERAL';
+
+export type TemplateStatus = 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
+
+export interface NotificationTemplate {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  channel: NotificationChannel;
+  notificationType: NotificationType;
+  subject?: string;
+  body: string;
+  htmlBody?: string;
+  previewText?: string;
+  variables: string[];
+  status: TemplateStatus;
+  version: number;
+  isDefault: boolean;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTemplateRequest {
+  code: string;
+  name: string;
+  description?: string;
+  channel: NotificationChannel;
+  notificationType: NotificationType;
+  subject?: string;
+  body: string;
+  htmlBody?: string;
+  previewText?: string;
+  variables?: string[];
+  status?: TemplateStatus;
+  isDefault?: boolean;
+}
+
+export interface UpdateTemplateRequest {
+  name?: string;
+  description?: string;
+  subject?: string;
+  body?: string;
+  htmlBody?: string;
+  previewText?: string;
+  variables?: string[];
+  status?: TemplateStatus;
+  isDefault?: boolean;
+}
+
+export interface TemplatePreview {
+  subject?: string;
+  body: string;
+  htmlBody?: string;
+}
+
+export interface EnumOption {
+  value: string;
+  label: string;
+}
+
 // API response types
 export interface ApiResponse<T> {
   data: T;
