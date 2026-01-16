@@ -96,10 +96,12 @@ export class ProgressTracker {
     }
 
     this.currentStepIndex = stepIndex;
-    this.steps[stepIndex].status = ProgressStatus.IN_PROGRESS;
+    const step = this.steps[stepIndex];
+    if (!step) return;
+
+    step.status = ProgressStatus.IN_PROGRESS;
 
     const progress = `[${stepIndex + 1}/${this.steps.length}]`;
-    const step = this.steps[stepIndex];
     this.logger.log(`${progress} ${STATUS_ICONS[ProgressStatus.IN_PROGRESS]} ${step.description}...`);
   }
 
@@ -112,6 +114,8 @@ export class ProgressTracker {
     }
 
     const step = this.steps[this.currentStepIndex];
+    if (!step) return;
+
     step.status = skipped ? ProgressStatus.SKIPPED : ProgressStatus.COMPLETED;
     step.duration = Date.now() - this.startTime;
     step.result = result;
@@ -131,6 +135,8 @@ export class ProgressTracker {
     }
 
     const step = this.steps[this.currentStepIndex];
+    if (!step) return;
+
     step.status = ProgressStatus.FAILED;
     step.result = error;
 

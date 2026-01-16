@@ -126,7 +126,9 @@ export default function AuditLogPage() {
   });
 
   const handleFilterChange = (key: string, value: string) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+    // Convert 'all' back to empty string for filtering
+    const filterValue = value === 'all' ? '' : value;
+    setFilters((prev) => ({ ...prev, [key]: filterValue }));
     setPage(1);
   };
 
@@ -161,7 +163,7 @@ export default function AuditLogPage() {
       </div>
 
       {/* Stats Cards */}
-      {stats && (
+      {stats && stats.totalEvents !== undefined && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="pb-2">
@@ -170,7 +172,7 @@ export default function AuditLogPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold">{stats.totalEvents.toLocaleString()}</p>
+              <p className="text-2xl font-bold">{(stats.totalEvents ?? 0).toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card>
@@ -225,15 +227,15 @@ export default function AuditLogPage() {
             <div>
               <Label>Event Type</Label>
               <Select
-                value={filters.eventType}
+                value={filters.eventType || 'all'}
                 onValueChange={(v) => handleFilterChange('eventType', v)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All types" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All types</SelectItem>
-                  {eventTypes?.map((type) => (
+                  <SelectItem value="all">All types</SelectItem>
+                  {Array.isArray(eventTypes) && eventTypes.map((type) => (
                     <SelectItem key={type} value={type}>
                       {type.replace(/_/g, ' ')}
                     </SelectItem>
@@ -252,14 +254,14 @@ export default function AuditLogPage() {
             <div>
               <Label>Entity Type</Label>
               <Select
-                value={filters.entityType}
+                value={filters.entityType || 'all'}
                 onValueChange={(v) => handleFilterChange('entityType', v)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All entities" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All entities</SelectItem>
+                  <SelectItem value="all">All entities</SelectItem>
                   <SelectItem value="user">User</SelectItem>
                   <SelectItem value="policy">Policy</SelectItem>
                   <SelectItem value="payment">Payment</SelectItem>
@@ -271,14 +273,14 @@ export default function AuditLogPage() {
             <div>
               <Label>Outcome</Label>
               <Select
-                value={filters.outcome}
+                value={filters.outcome || 'all'}
                 onValueChange={(v) => handleFilterChange('outcome', v)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All outcomes" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All outcomes</SelectItem>
+                  <SelectItem value="all">All outcomes</SelectItem>
                   <SelectItem value="success">Success</SelectItem>
                   <SelectItem value="failure">Failure</SelectItem>
                 </SelectContent>
@@ -317,7 +319,7 @@ export default function AuditLogPage() {
             Audit Events
           </CardTitle>
           <CardDescription>
-            {data?.total.toLocaleString() || 0} events found
+            {(data?.total ?? 0).toLocaleString()} events found
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -345,7 +347,7 @@ export default function AuditLogPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data?.events.map((event) => {
+                  {data?.events?.map((event) => {
                     const category = getEventCategory(event.eventType);
                     return (
                       <TableRow

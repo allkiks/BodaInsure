@@ -29,7 +29,7 @@ import { ROLES } from '../../../common/constants/index.js';
  */
 @ApiTags('Audit')
 @ApiBearerAuth()
-@Controller('api/v1/audit')
+@Controller('audit')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(ROLES.PLATFORM_ADMIN, ROLES.INSURANCE_ADMIN)
 export class AuditController {

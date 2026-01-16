@@ -6,7 +6,7 @@
  * It wraps TypeORM's migration runner to provide user-friendly output.
  *
  * Usage:
- *   npm run migration:run:cli
+ *   npm run migration:run:verbose
  *   npx ts-node src/database/migrations/run-migrations.ts
  *
  * Exit codes:
@@ -20,8 +20,7 @@
  */
 
 import 'reflect-metadata';
-import { DataSource } from 'typeorm';
-import { AppDataSource } from '../data-source.js';
+import appDataSource from '../data-source';
 
 /**
  * Status icons for console output
@@ -50,19 +49,25 @@ function formatDuration(ms: number): string {
 }
 
 /**
+ * Get timestamp for logging
+ */
+function getTimestamp(): string {
+  const time = new Date().toISOString().split('T')[1];
+  return time ? time.split('.')[0] ?? '' : '';
+}
+
+/**
  * Log with timestamp prefix
  */
 function log(message: string): void {
-  const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.log(`[${timestamp}] ${message}`);
+  console.log(`[${getTimestamp()}] ${message}`);
 }
 
 /**
  * Log error with timestamp prefix
  */
 function logError(message: string): void {
-  const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  console.error(`[${timestamp}] ${message}`);
+  console.error(`[${getTimestamp()}] ${message}`);
 }
 
 /**
@@ -112,7 +117,7 @@ function getMigrationName(name: string): string {
   // Extract readable name from migration class name
   // e.g., "InitialSchema1735000000000" -> "Initial Schema"
   const match = name.match(/^(\d+)-?(.+)$/);
-  if (match) {
+  if (match && match[2]) {
     // Convert camelCase/PascalCase to spaces
     return match[2]
       .replace(/([A-Z])/g, ' $1')
@@ -127,34 +132,35 @@ function getMigrationName(name: string): string {
  */
 async function runMigrations(): Promise<void> {
   const startTime = Date.now();
-  let dataSource: DataSource | null = null;
   let appliedCount = 0;
   let skippedCount = 0;
   let failedCount = 0;
+  let isInitialized = false;
 
   printHeader();
 
   try {
     // Initialize data source
     log(`${ICONS.running} Connecting to database...`);
-    dataSource = await AppDataSource.initialize();
+    await appDataSource.initialize();
+    isInitialized = true;
     log(`${ICONS.done} Database connected`);
     console.log('');
 
     // Get pending migrations
-    const pendingMigrations = await dataSource.showMigrations();
+    const pendingMigrations = await appDataSource.showMigrations();
 
     if (!pendingMigrations) {
       log(`${ICONS.skipped} No pending migrations`);
       skippedCount = 0;
       printSummary(appliedCount, skippedCount, failedCount, Date.now() - startTime);
-      await dataSource.destroy();
+      await appDataSource.destroy();
       process.exit(0);
     }
 
     // Get all migrations that will be executed
-    const migrations = dataSource.migrations;
-    const executedMigrations = await dataSource.query(
+    const migrations = appDataSource.migrations;
+    const executedMigrations = await appDataSource.query(
       `SELECT name FROM typeorm_migrations ORDER BY id`,
     ).catch(() => [] as Array<{ name: string }>);
     const executedNames = new Set(executedMigrations.map((m: { name: string }) => m.name));
@@ -165,7 +171,7 @@ async function runMigrations(): Promise<void> {
     if (pending.length === 0) {
       log(`${ICONS.skipped} All migrations already applied`);
       printSummary(0, migrations.length, 0, Date.now() - startTime);
-      await dataSource.destroy();
+      await appDataSource.destroy();
       process.exit(0);
     }
 
@@ -175,14 +181,16 @@ async function runMigrations(): Promise<void> {
     // Run migrations with progress
     for (let i = 0; i < pending.length; i++) {
       const migration = pending[i];
-      const migrationName = getMigrationName(migration.name);
+      if (!migration) continue;
+
+      const migrationName = getMigrationName(migration.name ?? `migration_${i}`);
       const progress = `[${i + 1}/${pending.length}]`;
 
       log(`${progress} ${ICONS.running} Running: ${migrationName}...`);
 
       try {
         const migrationStart = Date.now();
-        await dataSource.runMigrations({ transaction: 'each' });
+        await appDataSource.runMigrations({ transaction: 'each' });
 
         const migrationDuration = Date.now() - migrationStart;
         log(`     ${ICONS.done} Done (${formatDuration(migrationDuration)})`);
@@ -199,14 +207,11 @@ async function runMigrations(): Promise<void> {
     }
 
     // Recalculate applied count from actual database state
-    const finalExecuted = await dataSource.query(
-      `SELECT COUNT(*) as count FROM typeorm_migrations`,
-    ).catch(() => [{ count: 0 }]);
     appliedCount = pending.length;
 
     printSummary(appliedCount, skippedCount, failedCount, Date.now() - startTime);
 
-    await dataSource.destroy();
+    await appDataSource.destroy();
     process.exit(failedCount > 0 ? 1 : 0);
 
   } catch (error) {
@@ -215,8 +220,8 @@ async function runMigrations(): Promise<void> {
 
     printSummary(appliedCount, skippedCount, failedCount + 1, Date.now() - startTime);
 
-    if (dataSource?.isInitialized) {
-      await dataSource.destroy();
+    if (isInitialized && appDataSource.isInitialized) {
+      await appDataSource.destroy();
     }
     process.exit(1);
   }

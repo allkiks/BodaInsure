@@ -86,7 +86,12 @@
       "Bash(npx jest:*)",
       "Bash(pushd:*)",
       "Bash(popd)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(docker builder prune:*)",
+      "Bash(docker system prune:*)",
+      "Bash(make dev-docker-build:*)",
+      "Bash(make dev-docker-up:*)",
+      "Bash(docker volume rm:*)"
     ]
   }
 }

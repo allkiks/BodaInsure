@@ -30,7 +30,8 @@ const logger = new Logger('SeedRunner');
  * Format timestamp for logging
  */
 function getTimestamp(): string {
-  return new Date().toISOString().split('T')[1].split('.')[0];
+  const time = new Date().toISOString().split('T')[1];
+  return time ? time.split('.')[0] ?? '' : '';
 }
 
 /**

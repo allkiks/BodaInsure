@@ -13,13 +13,14 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../identity/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../../identity/guards/roles.guard.js';
-import { Roles } from '../../identity/decorators/roles.decorator.js';
-import { CurrentUser } from '../../identity/decorators/current-user.decorator.js';
-import { TemplateService, CreateTemplateDto, UpdateTemplateDto } from '../services/template.service.js';
+import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../../../common/guards/roles.guard.js';
+import { Roles } from '../../../common/decorators/roles.decorator.js';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
+import { TemplateService } from '../services/template.service.js';
+import type { CreateTemplateDto, UpdateTemplateDto } from '../services/template.service.js';
 import { NotificationChannel, NotificationType } from '../entities/notification.entity.js';
-import { TemplateStatus, NotificationTemplate } from '../entities/notification-template.entity.js';
+import { TemplateStatus } from '../entities/notification-template.entity.js';
 
 /**
  * Template preview request DTO

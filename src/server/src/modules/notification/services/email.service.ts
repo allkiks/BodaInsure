@@ -64,7 +64,7 @@ export function isValidEmail(email: string): boolean {
  */
 export function maskEmail(email: string): string {
   const parts = email.split('@');
-  if (parts.length !== 2) return '***';
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return '***';
   const local = parts[0].substring(0, 3) + '***';
   return `${local}@${parts[1]}`;
 }
@@ -154,14 +154,20 @@ export class EmailService {
 
     // Get SMTP provider (mailhog, gmail, outlook, or custom)
     this.smtpProvider = this.configService.get<string>('SMTP_PROVIDER', 'custom').toLowerCase();
-    const providerConfig = SMTP_PROVIDERS[this.smtpProvider] || SMTP_PROVIDERS.custom;
+    const defaultConfig: SmtpProviderConfig = {
+      host: 'localhost',
+      port: 25,
+      secure: 'false',
+      requiresAuth: false,
+    };
+    const providerConfig: SmtpProviderConfig = SMTP_PROVIDERS[this.smtpProvider] ?? defaultConfig;
 
     // Configure SMTP transport - use provider defaults, allow overrides
-    this.smtpHost = this.configService.get<string>('SMTP_HOST') || providerConfig.host;
-    const smtpPort = this.configService.get<number>('SMTP_PORT') || providerConfig.port;
+    this.smtpHost = this.configService.get<string>('SMTP_HOST') ?? providerConfig.host;
+    const smtpPort = this.configService.get<number>('SMTP_PORT') ?? providerConfig.port;
     const smtpUser = this.configService.get<string>('SMTP_USER');
     const smtpPass = this.configService.get<string>('SMTP_PASS');
-    const smtpSecure = this.configService.get<string>('SMTP_SECURE') || providerConfig.secure;
+    const smtpSecure = this.configService.get<string>('SMTP_SECURE') ?? providerConfig.secure;
 
     // Handle STARTTLS vs true/false
     const isSecure = smtpSecure === 'true' || smtpSecure === 'STARTTLS';

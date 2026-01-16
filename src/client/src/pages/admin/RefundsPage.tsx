@@ -300,9 +300,9 @@ export default function RefundsPage() {
             <div className="w-48">
               <Label>Status</Label>
               <Select
-                value={statusFilter}
+                value={statusFilter || 'all'}
                 onValueChange={(v) => {
-                  setStatusFilter(v as RefundStatus | '');
+                  setStatusFilter(v === 'all' ? '' : v as RefundStatus);
                   setPage(1);
                 }}
               >
@@ -310,7 +310,7 @@ export default function RefundsPage() {
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All statuses</SelectItem>
+                  <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="PENDING">Pending</SelectItem>
                   <SelectItem value="APPROVED">Approved</SelectItem>
                   <SelectItem value="PROCESSING">Processing</SelectItem>

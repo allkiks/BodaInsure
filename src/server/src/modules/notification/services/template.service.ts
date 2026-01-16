@@ -414,6 +414,8 @@ export class TemplateService {
     // Seed email templates
     const emailTemplates = this.getDefaultEmailTemplates();
     for (const emailTemplate of emailTemplates) {
+      if (!emailTemplate.code) continue;
+
       const existing = await this.findByCode(emailTemplate.code);
       if (!existing) {
         await this.templateRepository.save(

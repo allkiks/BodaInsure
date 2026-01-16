@@ -15,6 +15,7 @@ import { Membership } from '../organization/entities/membership.entity.js';
 import { PolicyTerms } from '../policy/entities/policy-terms.entity.js';
 import { Policy } from '../policy/entities/policy.entity.js';
 import { GlAccount } from '../accounting/entities/gl-account.entity.js';
+import { NotificationTemplate } from '../notification/entities/notification-template.entity.js';
 
 // Seeding services
 import { SeederService } from '../identity/services/seeder.service.js';
@@ -49,7 +50,7 @@ import { SeedingRunnerService } from './seeding-runner.service.js';
         username: configService.get<string>('database.username'),
         password: configService.get<string>('database.password'),
         database: configService.get<string>('database.database'),
-        entities: [User, Otp, Session, Organization, Membership, PolicyTerms, Policy, GlAccount],
+        entities: [User, Otp, Session, Organization, Membership, PolicyTerms, Policy, GlAccount, NotificationTemplate],
         synchronize: false, // Never sync in seeding - migrations handle schema
         logging: configService.get<boolean>('database.logging'),
         ssl: configService.get('database.ssl'),
@@ -68,6 +69,7 @@ import { SeedingRunnerService } from './seeding-runner.service.js';
       PolicyTerms,
       Policy,
       GlAccount,
+      NotificationTemplate,
     ]),
   ],
   providers: [
