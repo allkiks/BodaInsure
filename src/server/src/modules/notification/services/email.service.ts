@@ -70,6 +70,43 @@ export function maskEmail(email: string): string {
 }
 
 /**
+ * Predefined SMTP provider configurations
+ */
+interface SmtpProviderConfig {
+  host: string;
+  port: number;
+  secure: 'true' | 'false' | 'STARTTLS';
+  requiresAuth: boolean;
+}
+
+const SMTP_PROVIDERS: Record<string, SmtpProviderConfig> = {
+  mailhog: {
+    host: 'mailhog',
+    port: 1025,
+    secure: 'false',
+    requiresAuth: false,
+  },
+  gmail: {
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: 'STARTTLS',
+    requiresAuth: true,
+  },
+  outlook: {
+    host: 'smtp.office365.com',
+    port: 587,
+    secure: 'STARTTLS',
+    requiresAuth: true,
+  },
+  custom: {
+    host: 'localhost',
+    port: 25,
+    secure: 'false',
+    requiresAuth: false,
+  },
+};
+
+/**
  * Email Service
  * Per GAP-017: Email service implementation for notifications
  *
@@ -83,6 +120,7 @@ export function maskEmail(email: string): string {
  * - GAP-E02: Audit logging integration
  * - GAP-E03: Retry logic with exponential backoff
  * - GAP-E05: Email address validation
+ * - SMTP_PROVIDER selector for easy provider switching
  */
 @Injectable()
 export class EmailService {
@@ -94,6 +132,7 @@ export class EmailService {
   private readonly maxRetries: number;
   private readonly retryDelayMs: number;
   private readonly smtpHost: string;
+  private readonly smtpProvider: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -113,12 +152,16 @@ export class EmailService {
     this.maxRetries = this.configService.get<number>('EMAIL_MAX_RETRIES', 3);
     this.retryDelayMs = this.configService.get<number>('EMAIL_RETRY_DELAY_MS', 1000);
 
-    // Configure SMTP transport
-    this.smtpHost = this.configService.get<string>('SMTP_HOST', 'localhost');
-    const smtpPort = this.configService.get<number>('SMTP_PORT', 1025);
+    // Get SMTP provider (mailhog, gmail, outlook, or custom)
+    this.smtpProvider = this.configService.get<string>('SMTP_PROVIDER', 'custom').toLowerCase();
+    const providerConfig = SMTP_PROVIDERS[this.smtpProvider] || SMTP_PROVIDERS.custom;
+
+    // Configure SMTP transport - use provider defaults, allow overrides
+    this.smtpHost = this.configService.get<string>('SMTP_HOST') || providerConfig.host;
+    const smtpPort = this.configService.get<number>('SMTP_PORT') || providerConfig.port;
     const smtpUser = this.configService.get<string>('SMTP_USER');
     const smtpPass = this.configService.get<string>('SMTP_PASS');
-    const smtpSecure = this.configService.get<string>('SMTP_SECURE', 'false');
+    const smtpSecure = this.configService.get<string>('SMTP_SECURE') || providerConfig.secure;
 
     // Handle STARTTLS vs true/false
     const isSecure = smtpSecure === 'true' || smtpSecure === 'STARTTLS';
@@ -140,6 +183,8 @@ export class EmailService {
 
     if (!this.enabled) {
       this.logger.warn('Email service is DISABLED. Set EMAIL_ENABLED=true to enable.');
+    } else {
+      this.logger.log(`Email service configured with provider: ${this.smtpProvider} (${this.smtpHost}:${smtpPort})`);
     }
   }
 
